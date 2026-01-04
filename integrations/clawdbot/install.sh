@@ -192,11 +192,31 @@ sha256() {
 # Checksum Verification
 # ─────────────────────────────────────────────────────────────────────────────
 
+fetch_manifest() {
+  if ! curl -sL --fail --max-time 10 "$MANIFEST_URL" 2>/dev/null; then
+    return 1
+  fi
+}
+
+extract_manifest_commit() {
+  local manifest="$1"
+  local commit
+  commit=$(echo "$manifest" | \
+    grep -m 1 -E '^[[:space:]]*"commit"[[:space:]]*:' | \
+    sed 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+
+  if [[ -z "$commit" || ${#commit} -lt 7 ]]; then
+    return 1
+  fi
+
+  echo "$commit"
+}
+
 fetch_expected_checksum() {
   log_step "Fetching checksum from manifest..."
 
-  local manifest
-  if ! manifest=$(curl -sL --fail --max-time 10 "$MANIFEST_URL" 2>/dev/null); then
+  local manifest="$1"
+  if [[ -z "$manifest" ]]; then
     log_warn "Could not fetch manifest (network error or file not found)"
     return 1
   fi
@@ -216,6 +236,11 @@ fetch_expected_checksum() {
   fi
 
   echo "$checksum"
+}
+
+security_url_for_ref() {
+  local ref="$1"
+  echo "https://raw.githubusercontent.com/${ACIP_REPO}/${ref}/${SECURITY_FILE}"
 }
 
 verify_checksum() {
@@ -297,16 +322,23 @@ backup_existing() {
 # ─────────────────────────────────────────────────────────────────────────────
 
 download_security_file() {
+  local ref="$1"
+
   log_step "Downloading SECURITY.md..."
 
   local tmp_file
   tmp_file=$(mktemp)
   trap "rm -f '$tmp_file'" EXIT
 
-  if ! curl -sL --fail --max-time 30 "$SECURITY_URL" -o "$tmp_file"; then
+  local url="$SECURITY_URL"
+  if [[ -n "${ref:-}" ]]; then
+    url=$(security_url_for_ref "$ref")
+  fi
+
+  if ! curl -sL --fail --max-time 30 "$url" -o "$tmp_file"; then
     log_error "Failed to download SECURITY.md"
     echo ""
-    echo "  URL: ${SECURITY_URL}"
+    echo "  URL: ${url}"
     echo "  Please check your network connection and try again."
     exit 1
   fi
@@ -342,18 +374,29 @@ install() {
   check_requirements
   ensure_workspace
   backup_existing
-  download_security_file
 
-  # Attempt checksum verification
-  local expected_checksum
-  if expected_checksum=$(fetch_expected_checksum); then
+  # Attempt to fetch manifest + pin download to the manifest commit to avoid TOCTOU issues.
+  local manifest=""
+  local manifest_commit=""
+  local expected_checksum=""
+
+  if manifest=$(fetch_manifest); then
+    if manifest_commit=$(extract_manifest_commit "$manifest"); then
+      expected_checksum=$(fetch_expected_checksum "$manifest" || true)
+    fi
+  fi
+
+  if [[ -n "${manifest_commit:-}" && -n "${expected_checksum:-}" ]]; then
+    log_info "Using pinned ACIP commit: ${manifest_commit}"
+    download_security_file "$manifest_commit"
     if ! verify_checksum "$TARGET_FILE" "$expected_checksum"; then
       log_error "Checksum verification failed - removing downloaded file"
       rm -f "$TARGET_FILE"
       exit 1
     fi
   else
-    # Show checksum for manual verification
+    log_warn "Manifest unavailable; downloading from ${ACIP_BRANCH} without verification"
+    download_security_file ""
     local actual_checksum
     actual_checksum=$(sha256 "$TARGET_FILE")
     log_info "Checksum (for manual verification): ${actual_checksum}"

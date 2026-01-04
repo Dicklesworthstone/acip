@@ -5,7 +5,8 @@ on:
     branches: [main]
     paths:
       - 'ACIP_*.md'
-      - 'integrations/**/*.md'
+      - 'integrations/**'
+      - 'README.md'
   release:
     types: [published]
   workflow_dispatch:
@@ -54,6 +55,15 @@ jobs:
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           COMMIT=$(git rev-parse HEAD)
 
+          # Resolve latest and recommended versions.
+          # - latest: highest ACIP_v_* version found
+          # - recommended: RECOMMENDED_VERSION file if present, else latest
+          LATEST_VERSION=$(ls ACIP_v_*.md 2>/dev/null | sed -E 's/ACIP_v_([0-9.]+)_.*/\1/' | sort -V | tail -1)
+          RECOMMENDED_VERSION=$(cat RECOMMENDED_VERSION 2>/dev/null | tr -d '[:space:]' || true)
+          if [ -z "${RECOMMENDED_VERSION:-}" ]; then
+            RECOMMENDED_VERSION="$LATEST_VERSION"
+          fi
+
           # Start building the versions array
           VERSIONS_JSON="["
           FIRST=true
@@ -96,7 +106,7 @@ jobs:
                   \"size_bytes\": $SIZE,
                   \"lines\": $LINES,
                   \"tokens\": $TOKENS,
-                  \"raw_url\": \"https://raw.githubusercontent.com/${{ github.repository }}/main/$file\"
+                  \"raw_url\": \"https://raw.githubusercontent.com/${{ github.repository }}/$COMMIT/$file\"
                 }"
             fi
           done
@@ -108,10 +118,9 @@ jobs:
           INTEGRATIONS_JSON="["
           FIRST_INT=true
 
-          # Process integration files (all .md files in integration directories)
-          for intfile in integrations/*/*.md; do
-            if [ -f "$intfile" ]; then
-              echo "Processing integration: $intfile"
+          # Process integration files (unique; include md + sh)
+          while IFS= read -r intfile; do
+            echo "Processing integration: $intfile"
 
               # Extract integration name from path
               INT_NAME=$(echo "$intfile" | cut -d'/' -f2)
@@ -147,10 +156,9 @@ jobs:
                   \"size_bytes\": $INT_SIZE,
                   \"lines\": $INT_LINES,
                   \"tokens\": $INT_TOKENS,
-                  \"raw_url\": \"https://raw.githubusercontent.com/${{ github.repository }}/main/$intfile\"
+                  \"raw_url\": \"https://raw.githubusercontent.com/${{ github.repository }}/$COMMIT/$intfile\"
                 }"
-            fi
-          done
+          done < <(find integrations -type f \\( -name '*.md' -o -name '*.sh' \\) -print | LC_ALL=C sort -u)
 
           INTEGRATIONS_JSON="$INTEGRATIONS_JSON
             ]"
@@ -158,13 +166,14 @@ jobs:
           # Create final manifest
           cat > .checksums/manifest.json << EOF
           {
-            "schema_version": "1.1",
+            "schema_version": "1.2",
             "project": "ACIP",
             "description": "Advanced Cognitive Inoculation Prompt - Checksums and Metadata",
             "repository": "https://github.com/${{ github.repository }}",
             "generated_at": "$TIMESTAMP",
             "commit": "$COMMIT",
-            "recommended_version": "1.3",
+            "recommended_version": "$RECOMMENDED_VERSION",
+            "latest_version": "$LATEST_VERSION",
             "tokenizer": "tiktoken/cl100k_base",
             "versions": $VERSIONS_JSON,
             "integrations": $INTEGRATIONS_JSON,
