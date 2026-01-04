@@ -1,0 +1,183 @@
+name: Generate ACIP Checksums
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ACIP_*.md'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  generate-checksums:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate checksums and manifest
+        run: |
+          # Create checksums directory
+          mkdir -p .checksums
+
+          # Generate SHA256 checksums for all ACIP files
+          echo "Generating checksums for ACIP files..."
+
+          # Get current timestamp and commit
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          COMMIT=$(git rev-parse HEAD)
+
+          # Start building the versions array
+          VERSIONS_JSON="["
+          FIRST=true
+
+          # Process main ACIP version files
+          for file in ACIP_v_*.md; do
+            if [ -f "$file" ]; then
+              echo "Processing: $file"
+
+              # Extract version from filename (e.g., ACIP_v_1.3_Full_Text.md -> 1.3)
+              VERSION=$(echo "$file" | sed -E 's/ACIP_v_([0-9.]+)_.*/\1/')
+
+              # Generate SHA256 checksum
+              CHECKSUM=$(sha256sum "$file" | cut -d' ' -f1)
+
+              # Get file size
+              SIZE=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file")
+
+              # Get line count
+              LINES=$(wc -l < "$file" | tr -d ' ')
+
+              # Estimate token count (rough: chars/4)
+              CHARS=$(wc -c < "$file" | tr -d ' ')
+              TOKENS=$((CHARS / 4))
+
+              # Write individual checksum file
+              echo "$CHECKSUM  $file" > ".checksums/${file%.md}.sha256"
+
+              # Add to versions array
+              if [ "$FIRST" = true ]; then
+                FIRST=false
+              else
+                VERSIONS_JSON="$VERSIONS_JSON,"
+              fi
+
+              VERSIONS_JSON="$VERSIONS_JSON
+                {
+                  \"version\": \"$VERSION\",
+                  \"file\": \"$file\",
+                  \"sha256\": \"$CHECKSUM\",
+                  \"size_bytes\": $SIZE,
+                  \"lines\": $LINES,
+                  \"estimated_tokens\": $TOKENS,
+                  \"raw_url\": \"https://raw.githubusercontent.com/${{ github.repository }}/main/$file\"
+                }"
+            fi
+          done
+
+          VERSIONS_JSON="$VERSIONS_JSON
+            ]"
+
+          # Build integrations array
+          INTEGRATIONS_JSON="["
+          FIRST_INT=true
+
+          # Process integration files
+          for intfile in integrations/*/SECURITY.md integrations/*/*.md; do
+            if [ -f "$intfile" ]; then
+              echo "Processing integration: $intfile"
+
+              # Extract integration name from path
+              INT_NAME=$(echo "$intfile" | cut -d'/' -f2)
+
+              # Generate SHA256 checksum
+              INT_CHECKSUM=$(sha256sum "$intfile" | cut -d' ' -f1)
+
+              # Get file size
+              INT_SIZE=$(stat -f%z "$intfile" 2>/dev/null || stat -c%s "$intfile")
+
+              # Get line count
+              INT_LINES=$(wc -l < "$intfile" | tr -d ' ')
+
+              # Estimate token count
+              INT_CHARS=$(wc -c < "$intfile" | tr -d ' ')
+              INT_TOKENS=$((INT_CHARS / 4))
+
+              # Write individual checksum file
+              SAFE_NAME=$(echo "$intfile" | tr '/' '_')
+              echo "$INT_CHECKSUM  $intfile" > ".checksums/${SAFE_NAME%.md}.sha256"
+
+              # Add to integrations array
+              if [ "$FIRST_INT" = true ]; then
+                FIRST_INT=false
+              else
+                INTEGRATIONS_JSON="$INTEGRATIONS_JSON,"
+              fi
+
+              INTEGRATIONS_JSON="$INTEGRATIONS_JSON
+                {
+                  \"integration\": \"$INT_NAME\",
+                  \"file\": \"$intfile\",
+                  \"sha256\": \"$INT_CHECKSUM\",
+                  \"size_bytes\": $INT_SIZE,
+                  \"lines\": $INT_LINES,
+                  \"estimated_tokens\": $INT_TOKENS,
+                  \"raw_url\": \"https://raw.githubusercontent.com/${{ github.repository }}/main/$intfile\"
+                }"
+            fi
+          done
+
+          INTEGRATIONS_JSON="$INTEGRATIONS_JSON
+            ]"
+
+          # Create final manifest
+          cat > .checksums/manifest.json << EOF
+          {
+            "schema_version": "1.0",
+            "project": "ACIP",
+            "description": "Advanced Cognitive Inoculation Prompt - Checksums and Metadata",
+            "repository": "https://github.com/${{ github.repository }}",
+            "generated_at": "$TIMESTAMP",
+            "commit": "$COMMIT",
+            "recommended_version": "1.3",
+            "versions": $VERSIONS_JSON,
+            "integrations": $INTEGRATIONS_JSON,
+            "verification": {
+              "instructions": "To verify: sha256sum -c <version>.sha256",
+              "example": "curl -sL https://raw.githubusercontent.com/${{ github.repository }}/main/.checksums/ACIP_v_1.3_Full_Text.sha256 | sha256sum -c"
+            }
+          }
+          EOF
+
+          # Pretty print the manifest
+          cat .checksums/manifest.json
+
+          # Also create a combined checksums file
+          cat .checksums/*.sha256 > .checksums/SHA256SUMS 2>/dev/null || true
+
+      - name: Commit checksums
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          # Check if there are changes
+          git add .checksums/
+          if git diff --staged --quiet; then
+            echo "No changes to checksums"
+          else
+            git commit -m "Update ACIP checksums [skip ci]"
+            git push
+          fi
+
+      - name: Upload checksums as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: acip-checksums
+          path: .checksums/
+          retention-days: 90
