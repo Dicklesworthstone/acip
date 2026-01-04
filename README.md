@@ -708,7 +708,7 @@ curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/.checksum
 # Output: ACIP_v_1.3_Full_Text.md: OK
 ```
 
-The manifest includes SHA256 checksums, file sizes, line counts, and estimated token counts for all versions and integrations.
+The manifest includes SHA256 checksums, file sizes, line counts, and token counts for all versions and integrations.
 
 ---
 
