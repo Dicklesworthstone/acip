@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.1",
+  "project": "ACIP",
+  "description": "Advanced Cognitive Inoculation Prompt - Checksums and Metadata",
+  "repository": "https://github.com/Dicklesworthstone/acip",
+  "generated_at": "2026-01-04T23:32:20Z",
+  "commit": "bfa57ec41b5bbcb587b7f14943dfbc8e0d2edbc5",
+  "recommended_version": "1.3",
+  "tokenizer": "tiktoken/cl100k_base",
+  "versions": [
+      {
+        "version": "1.0",
+        "file": "ACIP_v_1.0_Full_Text.md",
+        "sha256": "36f74b56e06ceb72e6a0ac48a0e6e7b9fa66b1e92c65c0b4cbf757e72f133ee5",
+        "size_bytes": 9870,
+        "lines": 139,
+        "tokens": 2328,
+        "raw_url": "https://raw.githubusercontent.com/Dicklesworthstone/acip/main/ACIP_v_1.0_Full_Text.md"
+      },
+      {
+        "version": "1.2",
+        "file": "ACIP_v_1.2_Full_Text.md",
+        "sha256": "12d4f825e533d7b6a8937a355cf444a9c432d7b41df2f1a6a91654e0b684e11b",
+        "size_bytes": 18180,
+        "lines": 244,
+        "tokens": 3778,
+        "raw_url": "https://raw.githubusercontent.com/Dicklesworthstone/acip/main/ACIP_v_1.2_Full_Text.md"
+      },
+      {
+        "version": "1.3",
+        "file": "ACIP_v_1.3_Full_Text.md",
+        "sha256": "4a20617936c643c5dace2fdd2398a74b347d54ca4ecfa0f8c398e0d7a8d9b497",
+        "size_bytes": 22422,
+        "lines": 408,
+        "tokens": 4523,
+        "raw_url": "https://raw.githubusercontent.com/Dicklesworthstone/acip/main/ACIP_v_1.3_Full_Text.md"
+      }
+  ],
+  "integrations": [
+      {
+        "integration": "clawdbot",
+        "file": "integrations/clawdbot/README.md",
+        "sha256": "cdcf6d9e6f3a00b7d9f144533ee9b13efd505b571fc6002021a2694ac2c0df27",
+        "size_bytes": 6216,
+        "lines": 189,
+        "tokens": 1527,
+        "raw_url": "https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/README.md"
+      },
+      {
+        "integration": "clawdbot",
+        "file": "integrations/clawdbot/SECURITY.md",
+        "sha256": "5b5a8e5ff925bbbb52ce294029728af105d2146b47e7fcb7f5ed58e871fa53c3",
+        "size_bytes": 5214,
+        "lines": 121,
+        "tokens": 1098,
+        "raw_url": "https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/SECURITY.md"
+      }
+  ],
+  "verification": {
+    "instructions": "To verify: sha256sum -c <version>.sha256",
+    "example": "curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/.checksums/ACIP_v_1.3_Full_Text.sha256 | sha256sum -c"
+  }
+}
