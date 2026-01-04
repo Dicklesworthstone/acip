@@ -1,5 +1,18 @@
 # Advanced Cognitive Inoculation Prompt (ACIP)
 
+<div align="center">
+
+![ACIP - Cognitive Inoculation for LLMs](illustration.webp)
+
+*Fortifying Large Language Models against sophisticated prompt injection attacks*
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Version](https://img.shields.io/badge/version-1.3-blue.svg)](#acip-v13--whats-new-and-why)
+
+</div>
+
+---
+
 ## Overview
 
 The **Advanced Cognitive Inoculation Prompt (ACIP)** is a carefully engineered framework designed to significantly enhance the resilience of Large Language Models (LLMs) against sophisticated and subtle prompt injection attacks. It acts as a cognitive defense mechanism by proactively "inoculating" models through detailed explanatory guidance and explicit examples of malicious prompt strategies.
