@@ -2,6 +2,13 @@
 
 This directory contains an optimized version of ACIP (Advanced Cognitive Inoculation Prompt) specifically designed for [Clawdbot](https://github.com/clawdbot/clawdbot) personal AI assistants.
 
+## Current Status (Important)
+
+Clawdbot **does not currently load `SECURITY.md` by default**. Today, you have two options:
+
+1. **No-code (works now):** paste the contents of `SECURITY.md` into your existing `~/clawd/SOUL.md` (or `AGENTS.md`) so it’s injected into the system prompt.
+2. **Preferred (optional feature):** add Clawdbot support for loading `SECURITY.md` (and ideally add `clawdbot security enable|update|disable`). Once that exists, the installer script in this folder works as-is.
+
 ## Why ACIP for Clawdbot?
 
 Clawdbot is a powerful personal assistant with access to:
@@ -56,7 +63,7 @@ curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrati
 
 This script:
 - Downloads `SECURITY.md` to `~/clawd/`
-- Verifies the SHA256 checksum
+- Verifies the SHA256 checksum (and pins the download to the manifest’s commit when available)
 - Backs up any existing `SECURITY.md`
 - Reports success or failure
 
@@ -70,7 +77,7 @@ clawdbot security disable
 
 ## What It Does
 
-The `SECURITY.md` file is automatically loaded by Clawdbot alongside `AGENTS.md`, `SOUL.md`, and other workspace files. It adds a security layer that:
+When loaded into the agent’s prompt (either by pasting into `SOUL.md`/`AGENTS.md`, or via future `SECURITY.md` support in Clawdbot), it adds a security layer that:
 
 1. **Establishes Trust Boundaries**
    - Messages from external sources are treated as potentially adversarial data
@@ -101,7 +108,7 @@ The `SECURITY.md` file is automatically loaded by Clawdbot alongside `AGENTS.md`
 
 The clawdbot-optimized `SECURITY.md` is approximately:
 - ~1,200 tokens (vs. ~3,200 for full ACIP v1.3)
-- ~180 lines
+- ~120 lines
 - Optimized for the personal assistant threat model
 
 This adds minimal overhead while providing substantial protection.
@@ -157,9 +164,11 @@ mv ~/clawd/SECURITY.md ~/clawd/SECURITY.md.disabled
 
 Or simply delete the file. Clawdbot will continue to operate without the security layer.
 
+If you installed by pasting into `SOUL.md`/`AGENTS.md`, remove that section instead.
+
 ## Compatibility
 
-- **Clawdbot version:** 2026.1.4+
+- **Clawdbot version:** Any (paste into `SOUL.md`/`AGENTS.md`). Dedicated `SECURITY.md` loading requires a small Clawdbot change.
 - **Workspace files:** Compatible with AGENTS.md, SOUL.md, TOOLS.md, IDENTITY.md, USER.md
 - **Skills:** Does not conflict with skills
 
