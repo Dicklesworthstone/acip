@@ -22,10 +22,30 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install tiktoken
+        run: pip install tiktoken
+
       - name: Generate checksums and manifest
         run: |
           # Create checksums directory
           mkdir -p .checksums
+
+          # Helper function to count tokens using tiktoken
+          count_tokens() {
+            python3 -c "
+          import tiktoken
+          import sys
+          enc = tiktoken.get_encoding('cl100k_base')
+          with open(sys.argv[1], 'r') as f:
+              text = f.read()
+          print(len(enc.encode(text)))
+          " "$1"
+          }
 
           # Generate SHA256 checksums for all ACIP files
           echo "Generating checksums for ACIP files..."
@@ -55,9 +75,8 @@ jobs:
               # Get line count
               LINES=$(wc -l < "$file" | tr -d ' ')
 
-              # Estimate token count (rough: chars/4)
-              CHARS=$(wc -c < "$file" | tr -d ' ')
-              TOKENS=$((CHARS / 4))
+              # Count tokens using tiktoken (cl100k_base encoding)
+              TOKENS=$(count_tokens "$file")
 
               # Write individual checksum file
               echo "$CHECKSUM  $file" > ".checksums/${file%.md}.sha256"
@@ -76,7 +95,7 @@ jobs:
                   \"sha256\": \"$CHECKSUM\",
                   \"size_bytes\": $SIZE,
                   \"lines\": $LINES,
-                  \"estimated_tokens\": $TOKENS,
+                  \"tokens\": $TOKENS,
                   \"raw_url\": \"https://raw.githubusercontent.com/${{ github.repository }}/main/$file\"
                 }"
             fi
@@ -106,9 +125,8 @@ jobs:
               # Get line count
               INT_LINES=$(wc -l < "$intfile" | tr -d ' ')
 
-              # Estimate token count
-              INT_CHARS=$(wc -c < "$intfile" | tr -d ' ')
-              INT_TOKENS=$((INT_CHARS / 4))
+              # Count tokens using tiktoken (cl100k_base encoding)
+              INT_TOKENS=$(count_tokens "$intfile")
 
               # Write individual checksum file
               SAFE_NAME=$(echo "$intfile" | tr '/' '_')
@@ -128,7 +146,7 @@ jobs:
                   \"sha256\": \"$INT_CHECKSUM\",
                   \"size_bytes\": $INT_SIZE,
                   \"lines\": $INT_LINES,
-                  \"estimated_tokens\": $INT_TOKENS,
+                  \"tokens\": $INT_TOKENS,
                   \"raw_url\": \"https://raw.githubusercontent.com/${{ github.repository }}/main/$intfile\"
                 }"
             fi
@@ -140,13 +158,14 @@ jobs:
           # Create final manifest
           cat > .checksums/manifest.json << EOF
           {
-            "schema_version": "1.0",
+            "schema_version": "1.1",
             "project": "ACIP",
             "description": "Advanced Cognitive Inoculation Prompt - Checksums and Metadata",
             "repository": "https://github.com/${{ github.repository }}",
             "generated_at": "$TIMESTAMP",
             "commit": "$COMMIT",
             "recommended_version": "1.3",
+            "tokenizer": "tiktoken/cl100k_base",
             "versions": $VERSIONS_JSON,
             "integrations": $INTEGRATIONS_JSON,
             "verification": {
