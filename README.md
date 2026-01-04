@@ -656,6 +656,57 @@ The trade-offs were deliberate and, in our assessment, net positive. v1.3 recove
 
 ---
 
+## Integrations
+
+ACIP provides optimized variants for popular AI assistant frameworks. These are condensed versions tailored to specific use cases with lower token counts.
+
+### Clawdbot
+
+[Clawdbot](https://github.com/clawdbot/clawdbot) is a personal AI assistant with access to messaging (WhatsApp, Telegram, Discord), email, files, and tools. The ACIP integration provides protection against prompt injection via messages, emails, and web content.
+
+**Quick Install:**
+```bash
+curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/install.sh | bash
+```
+
+**Manual Install:**
+```bash
+curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/SECURITY.md \
+  -o ~/clawd/SECURITY.md
+```
+
+Features:
+- ~1,200 tokens (vs. ~3,200 for full v1.3)
+- Trust boundaries for messaging platforms
+- Protection against message-based injection
+- Tool and browser safety rules
+- Secret protection
+
+See [`integrations/clawdbot/`](integrations/clawdbot/) for full documentation.
+
+### About Contributions
+
+> *About Contributions:* Please don't take this the wrong way, but I do not accept outside contributions for any of my projects. I simply don't have the mental bandwidth to review anything, and it's my name on the thing, so I'm responsible for any problems it causes; thus, the risk-reward is highly asymmetric from my perspective. I'd also have to worry about other "stakeholders," which seems unwise for tools I mostly make for myself for free. Feel free to submit issues, and even PRs if you want to illustrate a proposed fix, but know I won't merge them directly. Instead, I'll have Claude or Codex review submissions via `gh` and independently decide whether and how to address them. Bug reports in particular are welcome. Sorry if this offends, but I want to avoid wasted time and hurt feelings. I understand this isn't in sync with the prevailing open-source ethos that seeks community contributions, but it's the only way I can move at this velocity and keep my sanity.
+
+---
+
+## Checksum Verification
+
+All ACIP files are checksummed via GitHub Actions. To verify authenticity:
+
+```bash
+# Fetch the manifest
+curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/.checksums/manifest.json
+
+# Verify a specific file
+curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/.checksums/ACIP_v_1.3_Full_Text.sha256 \
+  | sha256sum -c
+```
+
+The manifest includes SHA256 checksums, file sizes, line counts, and estimated token counts for all versions and integrations.
+
+---
+
 ## License
 
 This repository is released under the MIT License.
