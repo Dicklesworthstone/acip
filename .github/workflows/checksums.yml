@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'ACIP_*.md'
+      - 'integrations/**/*.md'
   release:
     types: [published]
   workflow_dispatch:
@@ -88,8 +89,8 @@ jobs:
           INTEGRATIONS_JSON="["
           FIRST_INT=true
 
-          # Process integration files
-          for intfile in integrations/*/SECURITY.md integrations/*/*.md; do
+          # Process integration files (all .md files in integration directories)
+          for intfile in integrations/*/*.md; do
             if [ -f "$intfile" ]; then
               echo "Processing integration: $intfile"
 
