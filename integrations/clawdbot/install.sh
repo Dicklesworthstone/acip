@@ -63,7 +63,7 @@ set -euo pipefail
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-readonly SCRIPT_VERSION="1.1.11"
+readonly SCRIPT_VERSION="1.1.12"
 readonly ACIP_REPO="Dicklesworthstone/acip"
 readonly ACIP_BRANCH="main"
 readonly SECURITY_FILE="integrations/clawdbot/SECURITY.md"
@@ -392,11 +392,11 @@ fetch_manifest_to_file() {
     -H "Accept: application/vnd.github.raw" \
     -H "User-Agent: ${ua}" \
     "${auth[@]}" \
-    "$api_url" -o "$out"; then
+    "$api_url" -o "$out" && [[ -s "$out" ]]; then
     return 0
   fi
 
-  if curl -fsSL --show-error --max-time 10 "$MANIFEST_URL" -o "$out"; then
+  if curl -fsSL --show-error --max-time 10 "$MANIFEST_URL" -o "$out" && [[ -s "$out" ]]; then
     return 0
   fi
 
@@ -435,16 +435,18 @@ extract_manifest_commit() {
   if [[ -z "$commit" ]]; then
     if [[ -f "$manifest_input" ]]; then
       commit="$(grep -m 1 -E '^[[:space:]]*"commit"[[:space:]]*:' "$manifest_input" | \
-        sed 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
+        sed 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true)"
     else
       commit="$(printf '%s' "$manifest_input" | \
         grep -m 1 -E '^[[:space:]]*"commit"[[:space:]]*:' | \
-        sed 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
+        sed 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true)"
     fi
     commit="$(printf '%s' "$commit" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
   fi
 
-  if [[ -z "$commit" || ${#commit} -lt 7 ]]; then
+  commit="$(printf '%s' "$commit" | tr '[:upper:]' '[:lower:]')"
+
+  if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
     return 1
   fi
 
@@ -477,18 +479,20 @@ fetch_expected_checksum() {
       checksum="$(grep -A10 "\"file\": \"${SECURITY_FILE}\"" "$manifest_input" | \
         grep '"sha256"' | \
         head -1 | \
-        sed 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([a-f0-9]*\)".*/\1/')"
+        sed 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([a-f0-9]*\)".*/\1/' || true)"
     else
       checksum="$(printf '%s' "$manifest_input" | \
         grep -A10 "\"file\": \"${SECURITY_FILE}\"" | \
         grep '"sha256"' | \
         head -1 | \
-        sed 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([a-f0-9]*\)".*/\1/')"
+        sed 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([a-f0-9]*\)".*/\1/' || true)"
     fi
     checksum="$(printf '%s' "$checksum" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
   fi
 
-  if [[ -z "$checksum" || ${#checksum} -ne 64 ]]; then
+  checksum="$(printf '%s' "$checksum" | tr '[:upper:]' '[:lower:]')"
+
+  if [[ ! "$checksum" =~ ^[0-9a-f]{64}$ ]]; then
     return 1
   fi
 
