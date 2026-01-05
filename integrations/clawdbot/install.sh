@@ -22,13 +22,13 @@
 #
 # Examples:
 #   # Standard install
-#   curl -sL .../install.sh | bash
+#   curl -fsSL ".../install.sh?ts=$(date +%s)" | bash
 #
 #   # Custom workspace, non-interactive
-#   CLAWD_WORKSPACE=~/assistant ACIP_NONINTERACTIVE=1 curl -sL .../install.sh | bash
+#   CLAWD_WORKSPACE=~/assistant ACIP_NONINTERACTIVE=1 curl -fsSL ".../install.sh?ts=$(date +%s)" | bash
 #
 #   # Uninstall
-#   ACIP_UNINSTALL=1 curl -sL .../install.sh | bash
+#   ACIP_UNINSTALL=1 curl -fsSL ".../install.sh?ts=$(date +%s)" | bash
 #
 
 set -euo pipefail
@@ -61,6 +61,8 @@ INJECT_FILE="${ACIP_INJECT_FILE:-SOUL.md}"
 WORKSPACE=""
 TARGET_FILE=""
 
+TEMP_FILES=()
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Terminal Colors & Styling
 # ─────────────────────────────────────────────────────────────────────────────
@@ -71,7 +73,6 @@ setup_colors() {
     readonly GREEN=$'\033[0;32m'
     readonly YELLOW=$'\033[1;33m'
     readonly BLUE=$'\033[0;34m'
-    readonly MAGENTA=$'\033[0;35m'
     readonly CYAN=$'\033[0;36m'
     readonly WHITE=$'\033[1;37m'
     readonly BOLD=$'\033[1m'
@@ -83,7 +84,7 @@ setup_colors() {
     readonly WARN="${YELLOW}⚠${RESET}"
     readonly INFO="${BLUE}ℹ${RESET}"
   else
-    readonly RED='' GREEN='' YELLOW='' BLUE='' MAGENTA='' CYAN=''
+    readonly RED='' GREEN='' YELLOW='' BLUE='' CYAN=''
     readonly WHITE='' BOLD='' DIM='' RESET=''
     readonly CHECK='[OK]' CROSS='[FAIL]' ARROW='->' WARN='[!]' INFO='[i]'
   fi
@@ -118,6 +119,17 @@ log_warn() {
 log_info() {
   [[ "$QUIET" == "1" ]] && return
   echo -e "${INFO} ${DIM}$*${RESET}"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cleanup
+# ─────────────────────────────────────────────────────────────────────────────
+
+cleanup() {
+  local f
+  for f in "${TEMP_FILES[@]}"; do
+    rm -f "$f" 2>/dev/null || true
+  done
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -165,8 +177,12 @@ detect_workspace_from_config() {
   [[ -f "$cfg_path" ]] || return 1
 
   local ws
-  ws="$(perl -0777 -ne 'if (/"workspace"\s*:\s*["'"'"'"]([^"'"'"'\n]+)["'"'"'"]/s){print $1; exit}' "$cfg_path" 2>/dev/null || true)"
-  ws="$(echo "$ws" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  if command -v perl >/dev/null 2>&1; then
+    ws="$(perl -0777 -ne 'if (/"workspace"\s*:\s*["'"'"'"]([^"'"'"'\n]+)["'"'"'"]/s){print $1; exit}' "$cfg_path" 2>/dev/null || true)"
+  else
+    ws=""
+  fi
+  ws="$(printf '%s' "$ws" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
   [[ -n "$ws" ]] || return 1
 
   # Expand "~" if present
@@ -215,6 +231,45 @@ mktemp_file() {
   fi
 
   echo "$tmp"
+}
+
+tmpfile() {
+  local tmp
+  tmp="$(mktemp_file)"
+  TEMP_FILES+=("$tmp")
+  echo "$tmp"
+}
+
+prompt_available() {
+  [[ "$NONINTERACTIVE" != "1" ]] || return 1
+  [[ -t 0 ]] || [[ -r /dev/tty ]]
+}
+
+prompt_yn() {
+  local prompt="$1"
+  local default="${2:-N}" # Y or N
+  local reply=""
+  local yn="[y/N]"
+  local input="/dev/stdin"
+
+  if [[ "$default" == "Y" ]]; then
+    yn="[Y/n]"
+  fi
+
+  if ! prompt_available; then
+    return 2
+  fi
+
+  if [[ ! -t 0 ]] && [[ -r /dev/tty ]]; then
+    input="/dev/tty"
+  fi
+
+  read -r -p "  ${prompt} ${yn} " reply < "$input" || true
+  if [[ -z "$reply" ]]; then
+    reply="$default"
+  fi
+
+  [[ "$reply" =~ ^[Yy]$ ]]
 }
 
 check_requirements() {
@@ -273,7 +328,7 @@ sha256() {
 # ─────────────────────────────────────────────────────────────────────────────
 
 fetch_manifest() {
-  if ! curl -sL --fail --max-time 10 "$MANIFEST_URL" 2>/dev/null; then
+  if ! curl -fsSL --show-error --max-time 10 "${MANIFEST_URL}?ts=$(date +%s)"; then
     return 1
   fi
 }
@@ -361,17 +416,13 @@ ensure_workspace() {
 
   log_warn "Workspace directory does not exist"
 
-  if [[ "$NONINTERACTIVE" == "1" ]]; then
-    log_error "Cannot create workspace in non-interactive mode"
-    echo "  Set CLAWD_WORKSPACE to an existing directory or create it first."
+  if ! prompt_available; then
+    log_error "Cannot create workspace (no TTY / non-interactive)"
+    echo "  Create it manually or set CLAWD_WORKSPACE to an existing directory."
     exit 1
   fi
 
-  echo ""
-  echo -n "  Create ${WORKSPACE}? [y/N] "
-  read -r response
-
-  if [[ "$response" =~ ^[Yy]$ ]]; then
+  if prompt_yn "Create ${WORKSPACE}?" "N"; then
     mkdir -p "$WORKSPACE"
     log_success "Created workspace: ${WORKSPACE}"
   else
@@ -390,11 +441,159 @@ backup_existing() {
     return 0
   fi
 
-  local backup_file="${TARGET_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+  local backup_file
+  backup_file="${TARGET_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 
   log_step "Backing up existing SECURITY.md..."
   cp "$TARGET_FILE" "$backup_file"
   log_success "Backup saved: ${DIM}${backup_file}${RESET}"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Activation (Optional Injection)
+# ─────────────────────────────────────────────────────────────────────────────
+
+resolve_inject_target() {
+  local preferred="${WORKSPACE%/}/${INJECT_FILE}"
+
+  if [[ -f "$preferred" ]]; then
+    echo "$preferred"
+    return 0
+  fi
+
+  if [[ "$INJECT_FILE" == "SOUL.md" && -f "${WORKSPACE%/}/AGENTS.md" ]]; then
+    echo "${WORKSPACE%/}/AGENTS.md"
+    return 0
+  fi
+
+  if [[ "$INJECT_FILE" == "AGENTS.md" && -f "${WORKSPACE%/}/SOUL.md" ]]; then
+    echo "${WORKSPACE%/}/SOUL.md"
+    return 0
+  fi
+
+  echo "$preferred"
+}
+
+file_has_injection() {
+  local file="$1"
+  grep -q "$INJECT_BEGIN" "$file" 2>/dev/null && grep -q "$INJECT_END" "$file" 2>/dev/null
+}
+
+ensure_inject_target_exists() {
+  local file="$1"
+
+  if [[ -f "$file" ]]; then
+    return 0
+  fi
+
+  log_warn "Injection target not found: ${file}"
+
+  if ! prompt_available; then
+    log_error "Cannot create ${file} (no TTY / non-interactive)"
+    echo "  Create it manually, or re-run with: ACIP_INJECT=0"
+    exit 1
+  fi
+
+  if prompt_yn "Create ${file} so ACIP can be activated now?" "Y"; then
+    printf '%s\n' "# ${INJECT_FILE} - Clawdbot system instructions" > "$file"
+    printf '%s\n' "" >> "$file"
+    chmod 600 "$file" 2>/dev/null || true
+    log_success "Created: ${file}"
+  else
+    log_warn "Skipping activation injection"
+    return 1
+  fi
+}
+
+backup_file() {
+  local file="$1"
+  local label="${2:-backup}"
+
+  [[ -f "$file" ]] || return 0
+
+  if [[ "$FORCE" == "1" ]]; then
+    log_info "Force mode: skipping backup of ${file}"
+    return 0
+  fi
+
+  local backup_path
+  backup_path="${file}.${label}.$(date +%Y%m%d_%H%M%S)"
+  cp "$file" "$backup_path"
+  log_info "Backup saved: ${backup_path}"
+}
+
+file_mode() {
+  local file="$1"
+
+  if stat -c %a "$file" >/dev/null 2>&1; then
+    stat -c %a "$file"
+  else
+    stat -f %Lp "$file"
+  fi
+}
+
+inject_security_into_file() {
+  local target="$1"
+  local original_mode=""
+  if [[ -e "$target" ]]; then
+    original_mode="$(file_mode "$target" 2>/dev/null || true)"
+  fi
+
+  local tmp
+  tmp="$(tmpfile)"
+
+  if file_has_injection "$target"; then
+    awk -v begin="$INJECT_BEGIN" -v end="$INJECT_END" -v src="$TARGET_FILE" '
+      $0 == begin {
+        print $0
+        while ((getline line < src) > 0) { print line }
+        close(src)
+        skipping=1
+        next
+      }
+      $0 == end { skipping=0; print $0; next }
+      !skipping { print $0 }
+    ' "$target" > "$tmp"
+  else
+    cat "$target" > "$tmp"
+    {
+      printf '\n%s\n' "$INJECT_BEGIN"
+      cat "$TARGET_FILE"
+      printf '\n%s\n' "$INJECT_END"
+    } >> "$tmp"
+  fi
+
+  mv "$tmp" "$target"
+  if [[ "$original_mode" =~ ^[0-9][0-9][0-9]([0-9])?$ ]]; then
+    chmod "$original_mode" "$target" 2>/dev/null || true
+  fi
+  log_success "Activated ACIP by injecting into: ${target}"
+}
+
+remove_security_injection_from_file() {
+  local target="$1"
+  [[ -f "$target" ]] || return 1
+  file_has_injection "$target" || return 1
+
+  local original_mode=""
+  if [[ -e "$target" ]]; then
+    original_mode="$(file_mode "$target" 2>/dev/null || true)"
+  fi
+
+  local tmp
+  tmp="$(tmpfile)"
+
+  awk -v begin="$INJECT_BEGIN" -v end="$INJECT_END" '
+    $0 == begin { skipping=1; next }
+    $0 == end { skipping=0; next }
+    !skipping { print $0 }
+  ' "$target" > "$tmp"
+
+  mv "$tmp" "$target"
+  if [[ "$original_mode" =~ ^[0-9][0-9][0-9]([0-9])?$ ]]; then
+    chmod "$original_mode" "$target" 2>/dev/null || true
+  fi
+  log_success "Removed ACIP injection block from: ${target}"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -407,15 +606,14 @@ download_security_file() {
   log_step "Downloading SECURITY.md..."
 
   local tmp_file
-  tmp_file=$(mktemp)
-  trap "rm -f '$tmp_file'" EXIT
+  tmp_file="$(tmpfile)"
 
   local url="$SECURITY_URL"
   if [[ -n "${ref:-}" ]]; then
     url=$(security_url_for_ref "$ref")
   fi
 
-  if ! curl -sL --fail --max-time 30 "$url" -o "$tmp_file"; then
+  if ! curl -fsSL --show-error --max-time 30 "$url" -o "$tmp_file"; then
     log_error "Failed to download SECURITY.md"
     echo ""
     echo "  URL: ${url}"
@@ -440,7 +638,7 @@ download_security_file() {
 
   # Move to final location
   mv "$tmp_file" "$TARGET_FILE"
-  trap - EXIT
+  chmod 644 "$TARGET_FILE" 2>/dev/null || true
 
   log_success "Downloaded successfully"
 }
@@ -475,11 +673,72 @@ install() {
       exit 1
     fi
   else
-    log_warn "Manifest unavailable; downloading from ${ACIP_BRANCH} without verification"
-    download_security_file ""
-    local actual_checksum
-    actual_checksum=$(sha256 "$TARGET_FILE")
-    log_info "Checksum (for manual verification): ${actual_checksum}"
+    if [[ "$ALLOW_UNVERIFIED" == "1" ]]; then
+      log_warn "Manifest unavailable; downloading from ${ACIP_BRANCH} without verification"
+      log_warn "This is NOT recommended; set ACIP_ALLOW_UNVERIFIED=0 to fail closed."
+      download_security_file ""
+      local actual_checksum
+      actual_checksum=$(sha256 "$TARGET_FILE")
+      log_info "Checksum (for manual verification): ${actual_checksum}"
+    else
+      log_error "Could not fetch/parse checksum manifest; refusing unverified install"
+      echo ""
+      echo "  This installer fails closed by default to prevent unverified downloads."
+      echo "  Check your network and try again."
+      echo ""
+      echo "  To override (NOT recommended):"
+      echo "    ACIP_ALLOW_UNVERIFIED=1 curl -fsSL \"${BASE_URL}/integrations/clawdbot/install.sh?ts=$(date +%s)\" | bash"
+      exit 1
+    fi
+  fi
+
+  local activated="0"
+  local inject_target=""
+
+  if has_clawdbot_security_cli; then
+    log_info "Detected Clawdbot security CLI; showing status"
+    CLAWD_WORKSPACE="$WORKSPACE" clawdbot security status 2>/dev/null || true
+    activated="1"
+  else
+    # If the user already has an injected ACIP block, keep it up to date automatically.
+    local existing_inject=0
+    local f=""
+    for f in "${WORKSPACE%/}/SOUL.md" "${WORKSPACE%/}/AGENTS.md"; do
+      if [[ -f "$f" ]] && file_has_injection "$f"; then
+        existing_inject=1
+        backup_file "$f" "backup"
+        inject_security_into_file "$f"
+      fi
+    done
+
+    if [[ "$existing_inject" == "1" ]]; then
+      activated="1"
+    else
+      inject_target="$(resolve_inject_target)"
+
+      if [[ "$INJECT" == "1" ]]; then
+        if ensure_inject_target_exists "$inject_target"; then
+          backup_file "$inject_target" "backup"
+          inject_security_into_file "$inject_target"
+          activated="1"
+        fi
+      elif [[ "$NONINTERACTIVE" == "1" ]]; then
+        log_warn "Clawdbot doesn't load SECURITY.md by default; ACIP may not be active yet"
+        log_info "To activate now: ACIP_INJECT=1 ${ARROW} inject into ${INJECT_FILE}"
+      else
+        echo ""
+        log_warn "Clawdbot doesn't load SECURITY.md by default"
+        if prompt_yn "Activate now by injecting ACIP into ${inject_target}?" "Y"; then
+          if ensure_inject_target_exists "$inject_target"; then
+            backup_file "$inject_target" "backup"
+            inject_security_into_file "$inject_target"
+            activated="1"
+          fi
+        else
+          log_warn "Installed SECURITY.md but did not activate it in Clawdbot prompts"
+        fi
+      fi
+    fi
   fi
 
   # Summary
@@ -488,7 +747,13 @@ install() {
   echo -e "${GREEN}║${RESET}                 ${BOLD}Installation Complete!${RESET}                    ${GREEN}║${RESET}"
   echo -e "${GREEN}╚═══════════════════════════════════════════════════════════╝${RESET}"
   echo ""
+  echo "  ${BOLD}Workspace:${RESET} ${WORKSPACE}"
   echo "  ${BOLD}Installed:${RESET} ${TARGET_FILE}"
+  if [[ "$activated" == "1" ]]; then
+    echo "  ${BOLD}Active:${RESET} yes"
+  else
+    echo "  ${BOLD}Active:${RESET} ${YELLOW}unknown${RESET} (enable injection to activate now)"
+  fi
   echo ""
   echo "  ${BOLD}Next steps:${RESET}"
   echo "    1. Review the file:  ${DIM}less ${TARGET_FILE}${RESET}"
@@ -509,25 +774,44 @@ uninstall() {
 
   log_step "Uninstalling ACIP security layer..."
 
+  # Remove injected blocks if present (safe to attempt on both common files)
+  local injected=0
+  local f=""
+  for f in "${WORKSPACE%/}/SOUL.md" "${WORKSPACE%/}/AGENTS.md"; do
+    if [[ -f "$f" ]] && file_has_injection "$f"; then
+      backup_file "$f" "uninstalled"
+      remove_security_injection_from_file "$f" || true
+      injected=1
+    fi
+  done
+
   if [[ ! -f "$TARGET_FILE" ]]; then
     log_warn "SECURITY.md not found at ${TARGET_FILE}"
     echo "  Nothing to uninstall."
+    if [[ "$injected" == "1" ]]; then
+      echo ""
+      echo "  Restart Clawdbot to apply changes."
+      echo ""
+    fi
     exit 0
   fi
 
   if [[ "$NONINTERACTIVE" != "1" ]]; then
     echo ""
-    echo -n "  Remove ${TARGET_FILE}? [y/N] "
-    read -r response
-
-    if [[ ! "$response" =~ ^[Yy]$ ]]; then
+    if ! prompt_available; then
+      log_error "Cannot prompt for confirmation (no TTY / non-interactive)"
+      echo "  Re-run with: ACIP_NONINTERACTIVE=1"
+      exit 1
+    fi
+    if ! prompt_yn "Remove ${TARGET_FILE}?" "N"; then
       log_error "Aborted by user"
       exit 1
     fi
   fi
 
   # Create backup before removing
-  local backup_file="${TARGET_FILE}.uninstalled.$(date +%Y%m%d_%H%M%S)"
+  local backup_file
+  backup_file="${TARGET_FILE}.uninstalled.$(date +%Y%m%d_%H%M%S)"
   mv "$TARGET_FILE" "$backup_file"
 
   log_success "Uninstalled ACIP security layer"
@@ -546,25 +830,29 @@ show_help() {
 ACIP Installer for Clawdbot v${SCRIPT_VERSION}
 
 Usage:
-  curl -sL .../install.sh | bash
-  curl -sL .../install.sh | ACIP_UNINSTALL=1 bash
+  curl -fsSL "https://raw.githubusercontent.com/${ACIP_REPO}/${ACIP_BRANCH}/integrations/clawdbot/install.sh?ts=\$(date +%s)" | bash
 
 Environment Variables:
-  CLAWD_WORKSPACE      Workspace directory (default: ~/clawd)
-  ACIP_NONINTERACTIVE  Skip prompts, fail if workspace doesn't exist
-  ACIP_FORCE           Overwrite without backup
-  ACIP_QUIET           Minimal output
-  ACIP_UNINSTALL       Remove SECURITY.md instead of installing
+  CLAWD_WORKSPACE         Workspace directory (default: auto-detect from clawdbot.json, else ~/clawd)
+  ACIP_NONINTERACTIVE     Skip prompts; fail if workspace doesn't exist
+  ACIP_FORCE              Overwrite without backup
+  ACIP_QUIET              Minimal output
+  ACIP_UNINSTALL          Remove SECURITY.md instead of installing
+  ACIP_ALLOW_UNVERIFIED   Allow install if manifest can't be fetched (NOT recommended)
+  ACIP_INJECT             Inject ACIP into SOUL.md/AGENTS.md so it's active today
+  ACIP_INJECT_FILE        Injection target (SOUL.md or AGENTS.md; default: SOUL.md)
 
 Examples:
   # Standard install
-  curl -sL .../install.sh | bash
+  curl -fsSL "https://raw.githubusercontent.com/${ACIP_REPO}/${ACIP_BRANCH}/integrations/clawdbot/install.sh?ts=\$(date +%s)" | bash
 
   # Custom workspace, non-interactive
-  CLAWD_WORKSPACE=~/assistant ACIP_NONINTERACTIVE=1 bash -c "\$(curl -sL .../install.sh)"
+  CLAWD_WORKSPACE=~/assistant ACIP_NONINTERACTIVE=1 \\
+    curl -fsSL "https://raw.githubusercontent.com/${ACIP_REPO}/${ACIP_BRANCH}/integrations/clawdbot/install.sh?ts=\$(date +%s)" | bash
 
   # Uninstall
-  ACIP_UNINSTALL=1 bash -c "\$(curl -sL .../install.sh)"
+  ACIP_UNINSTALL=1 \\
+    curl -fsSL "https://raw.githubusercontent.com/${ACIP_REPO}/${ACIP_BRANCH}/integrations/clawdbot/install.sh?ts=\$(date +%s)" | bash
 
 More info: https://github.com/${ACIP_REPO}
 EOF
@@ -576,6 +864,10 @@ EOF
 
 main() {
   setup_colors
+  trap cleanup EXIT
+
+  WORKSPACE="$(resolve_workspace)"
+  TARGET_FILE="${WORKSPACE%/}/SECURITY.md"
 
   # Handle help flag if running directly (not piped)
   if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then

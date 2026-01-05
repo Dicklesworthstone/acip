@@ -6,8 +6,8 @@ This directory contains an optimized version of ACIP (Advanced Cognitive Inocula
 
 Clawdbot **does not currently load `SECURITY.md` by default**. Today, you have two options:
 
-1. **No-code (works now):** paste the contents of `SECURITY.md` into your existing `~/clawd/SOUL.md` (or `AGENTS.md`) so it’s injected into the system prompt.
-2. **Preferred (optional feature):** add Clawdbot support for loading `SECURITY.md` (and ideally add `clawdbot security enable|update|disable`). Once that exists, the installer script in this folder works as-is.
+1. **No-code (works now):** paste the contents of `SECURITY.md` into your existing `~/clawd/SOUL.md` (or `AGENTS.md`) so it’s injected into the system prompt (or use the installer with `ACIP_INJECT=1` to do this automatically).
+2. **Preferred (optional feature):** add Clawdbot support for loading `SECURITY.md` (and ideally add `clawdbot security enable|update|disable`). Once that exists, the installer script in this folder works without injection.
 
 ## Why ACIP for Clawdbot?
 
@@ -31,19 +31,20 @@ ACIP provides a cognitive security layer that helps Clawd recognize and resist t
 
 1. Copy `SECURITY.md` to your Clawdbot workspace:
    ```bash
-   curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/SECURITY.md \
+   curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/SECURITY.md \
      -o ~/clawd/SECURITY.md
    ```
 
 2. Verify the checksum (optional but recommended):
    ```bash
    # Fetch the expected checksum
-   EXPECTED=$(curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/.checksums/manifest.json \
+   EXPECTED=$(curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/.checksums/manifest.json \
      | grep -A5 '"file": "integrations/clawdbot/SECURITY.md"' \
      | grep sha256 | cut -d'"' -f4)
 
    # Calculate actual checksum
-   ACTUAL=$(sha256sum ~/clawd/SECURITY.md | cut -d' ' -f1)
+   # Linux: sha256sum | macOS: shasum -a 256
+   ACTUAL=$({ sha256sum ~/clawd/SECURITY.md 2>/dev/null || shasum -a 256 ~/clawd/SECURITY.md; } | cut -d' ' -f1)
 
    # Compare
    if [ "$EXPECTED" = "$ACTUAL" ]; then
@@ -53,12 +54,12 @@ ACIP provides a cognitive security layer that helps Clawd recognize and resist t
    fi
    ```
 
-3. Restart Clawdbot to load the new file.
+3. To activate today, inject it into `SOUL.md`/`AGENTS.md` (or rerun the installer with `ACIP_INJECT=1`). Otherwise, keep `SECURITY.md` for future native support.
 
 ### Option 2: Automated Script
 
 ```bash
-curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/install.sh | bash
+curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/install.sh?ts=$(date +%s)" | bash
 ```
 
 This script:
@@ -66,6 +67,8 @@ This script:
 - Verifies the SHA256 checksum (and pins the download to the manifest’s commit when available)
 - Backs up any existing `SECURITY.md`
 - Reports success or failure
+
+If Clawdbot doesn’t load `SECURITY.md` yet, the installer will offer to **inject** the security layer into `SOUL.md`/`AGENTS.md` so it’s active immediately.
 
 ### Option 3: Clawdbot CLI (Coming Soon)
 

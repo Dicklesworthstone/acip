@@ -666,12 +666,13 @@ ACIP provides optimized variants for popular AI assistant frameworks. These are 
 
 **Quick Install:**
 ```bash
-curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/install.sh | bash
+curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/install.sh?ts=$(date +%s)" | bash
 ```
+The installer verifies checksums and can optionally inject ACIP into `SOUL.md`/`AGENTS.md` so it’s active immediately.
 
 **Manual Install:**
 ```bash
-curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/SECURITY.md \
+curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/SECURITY.md \
   -o ~/clawd/SECURITY.md
 ```
 
@@ -704,7 +705,7 @@ curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/ACIP_v_1.
 
 # Step 2: Download and run checksum verification
 curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/.checksums/ACIP_v_1.3_Full_Text.sha256 \
-  | sha256sum -c
+  | sha256sum -c  # macOS: shasum -a 256 -c
 # Output: ACIP_v_1.3_Full_Text.md: OK
 ```
 
