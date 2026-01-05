@@ -211,7 +211,8 @@ jobs:
         run: |
           if git diff --quiet -- .checksums/manifest.json && \
              [ -f .checksums/manifest.json.sig ] && \
-             [ -f .checksums/manifest.json.pem ]; then
+             [ -f .checksums/manifest.json.pem ] && \
+             [ -f .checksums/manifest.json.bundle ]; then
             echo "Manifest unchanged and signature/cert already present; skipping signing."
           else
             cosign sign-blob --yes \
