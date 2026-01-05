@@ -159,7 +159,7 @@ jobs:
                   \"tokens\": $INT_TOKENS,
                   \"raw_url\": \"https://raw.githubusercontent.com/${{ github.repository }}/$COMMIT/$intfile\"
                 }"
-          done < <(find integrations -type f \\( -name '*.md' -o -name '*.sh' \\) -print | LC_ALL=C sort -u)
+          done < <(find integrations -type f \( -name '*.md' -o -name '*.sh' \) -print | LC_ALL=C sort -u)
 
           INTEGRATIONS_JSON="$INTEGRATIONS_JSON
             ]"
