@@ -63,7 +63,7 @@ set -euo pipefail
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-readonly SCRIPT_VERSION="1.1.8"
+readonly SCRIPT_VERSION="1.1.9"
 readonly ACIP_REPO="Dicklesworthstone/acip"
 readonly ACIP_BRANCH="main"
 readonly SECURITY_FILE="integrations/clawdbot/SECURITY.md"
