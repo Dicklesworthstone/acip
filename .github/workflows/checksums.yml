@@ -189,7 +189,7 @@ jobs:
             "integrations": $INTEGRATIONS_JSON,
             "verification": {
               "instructions": "To verify: sha256sum -c <version>.sha256",
-              "example": "curl -sL https://raw.githubusercontent.com/${{ github.repository }}/main/.checksums/ACIP_v_1.3_Full_Text.sha256 | sha256sum -c"
+              "example": "curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/.checksums/ACIP_v_1.3_Full_Text.sha256 | sha256sum -c"
             }
           }
           EOF
@@ -213,6 +213,16 @@ jobs:
             --output-signature .checksums/manifest.json.sig \
             --output-certificate .checksums/manifest.json.pem \
             .checksums/manifest.json
+
+          # Normalize certificate to PEM for easier manual verification.
+          if ! grep -q "BEGIN CERTIFICATE" .checksums/manifest.json.pem; then
+            base64 -d .checksums/manifest.json.pem > .checksums/manifest.json.pem.decoded 2>/dev/null || true
+            if grep -q "BEGIN CERTIFICATE" .checksums/manifest.json.pem.decoded; then
+              mv .checksums/manifest.json.pem.decoded .checksums/manifest.json.pem
+            else
+              rm -f .checksums/manifest.json.pem.decoded
+            fi
+          fi
 
       - name: Commit checksums
         run: |

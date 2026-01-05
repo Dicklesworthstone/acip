@@ -182,7 +182,7 @@ To verify your `SECURITY.md` matches the official version:
 
 ```bash
 # Get the latest manifest
-curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/.checksums/manifest.json
+curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/.checksums/manifest.json
 ```
 
 The manifest contains SHA256 checksums for all ACIP files, generated automatically by GitHub Actions on each update.

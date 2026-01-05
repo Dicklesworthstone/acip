@@ -717,14 +717,14 @@ All ACIP files are checksummed via GitHub Actions. To verify authenticity:
 
 ```bash
 # Fetch the manifest (view checksums for all files)
-curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/.checksums/manifest.json
+curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/.checksums/manifest.json
 
 # Verify a downloaded file (example for v1.3)
 # Step 1: Download the file
-curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/ACIP_v_1.3_Full_Text.md -o ACIP_v_1.3_Full_Text.md
+curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/ACIP_v_1.3_Full_Text.md -o ACIP_v_1.3_Full_Text.md
 
 # Step 2: Download and run checksum verification
-curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/.checksums/ACIP_v_1.3_Full_Text.sha256 \
+curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/.checksums/ACIP_v_1.3_Full_Text.sha256 \
   | sha256sum -c  # macOS: shasum -a 256 -c
 # Output: ACIP_v_1.3_Full_Text.md: OK
 ```

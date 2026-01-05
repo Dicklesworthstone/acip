@@ -63,7 +63,7 @@ set -euo pipefail
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-readonly SCRIPT_VERSION="1.1.12"
+readonly SCRIPT_VERSION="1.1.13"
 readonly ACIP_REPO="Dicklesworthstone/acip"
 readonly ACIP_BRANCH="main"
 readonly SECURITY_FILE="integrations/clawdbot/SECURITY.md"
@@ -512,13 +512,19 @@ fetch_manifest_signing_material() {
 
   local sig_url="https://api.github.com/repos/${ACIP_REPO}/contents/${MANIFEST_SIG_PATH}?ref=${ACIP_BRANCH}"
   local cert_url="https://api.github.com/repos/${ACIP_REPO}/contents/${MANIFEST_CERT_PATH}?ref=${ACIP_BRANCH}"
+  local sig_url_raw="https://raw.githubusercontent.com/${ACIP_REPO}/${ACIP_BRANCH}/${MANIFEST_SIG_PATH}"
+  local cert_url_raw="https://raw.githubusercontent.com/${ACIP_REPO}/${ACIP_BRANCH}/${MANIFEST_CERT_PATH}"
 
   if ! curl -fsSL --max-time 10 \
     -H "Accept: application/vnd.github.raw" \
     -H "User-Agent: ${ua}" \
     "${auth[@]}" \
     "$sig_url" -o "$sig_out" 2>/dev/null; then
-    return 1
+    if ! curl -fsSL --max-time 10 \
+      -H "User-Agent: ${ua}" \
+      "$sig_url_raw" -o "$sig_out" 2>/dev/null; then
+      return 1
+    fi
   fi
 
   if ! curl -fsSL --max-time 10 \
@@ -526,7 +532,11 @@ fetch_manifest_signing_material() {
     -H "User-Agent: ${ua}" \
     "${auth[@]}" \
     "$cert_url" -o "$cert_out" 2>/dev/null; then
-    return 1
+    if ! curl -fsSL --max-time 10 \
+      -H "User-Agent: ${ua}" \
+      "$cert_url_raw" -o "$cert_out" 2>/dev/null; then
+      return 1
+    fi
   fi
 
   [[ -s "$sig_out" && -s "$cert_out" ]]
@@ -1002,7 +1012,22 @@ install() {
         fi
       fi
     else
-      log_info "Manifest is unsigned (no ${MANIFEST_SIG_PATH} found)"
+      if command -v cosign >/dev/null 2>&1; then
+        log_error "Could not fetch manifest signature material"
+        if [[ "$ALLOW_UNVERIFIED" == "1" ]]; then
+          log_warn "Continuing because ACIP_ALLOW_UNVERIFIED=1"
+        else
+          echo ""
+          echo "  Refusing to proceed without signature verification."
+          echo "  Check your network (or set GITHUB_TOKEN), then try again."
+          echo ""
+          echo "  To override (NOT recommended):"
+          echo "    ACIP_ALLOW_UNVERIFIED=1 curl -fsSL -H \"Accept: application/vnd.github.raw\" \"${INSTALLER_API_URL}\" | bash"
+          exit 1
+        fi
+      else
+        log_info "Manifest signature material unavailable (continuing without signature verification)"
+      fi
     fi
 
     if manifest_commit=$(extract_manifest_commit "$manifest_file"); then
@@ -1207,7 +1232,7 @@ status() {
         log_warn "Manifest signature verification failed"
       fi
     else
-      manifest_sig="unsigned"
+      manifest_sig="unavailable"
     fi
 
     if manifest_commit=$(extract_manifest_commit "$manifest_file"); then
