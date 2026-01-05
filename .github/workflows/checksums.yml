@@ -34,6 +34,7 @@ jobs:
         run: |
           # Create checksums directory
           mkdir -p .checksums
+          rm -f .checksums/*.sha256 .checksums/SHA256SUMS .checksums/manifest.json 2>/dev/null || true
 
           # Generate SHA256 checksums for all ACIP files
           echo "Generating checksums for ACIP files..."
