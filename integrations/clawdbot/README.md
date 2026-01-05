@@ -2,12 +2,12 @@
 
 This directory contains an optimized version of ACIP (Advanced Cognitive Inoculation Prompt) specifically designed for [Clawdbot](https://github.com/clawdbot/clawdbot) personal AI assistants.
 
-## Current Status (Important)
+## Activation (Important)
 
-Clawdbot **does not currently load `SECURITY.md` by default**. Today, you have two options:
+Depending on your Clawdbot version/config, `SECURITY.md` may not be loaded automatically. This integration supports two safe activation paths:
 
-1. **No-code (works now):** paste the contents of `SECURITY.md` into your existing `~/clawd/SOUL.md` (or `AGENTS.md`) so it’s injected into the system prompt (or use the installer with `ACIP_INJECT=1` to do this automatically).
-2. **Preferred (optional feature):** add Clawdbot support for loading `SECURITY.md` (and ideally add `clawdbot security enable|update|disable`). Once that exists, the installer script in this folder works without injection.
+1. **Active immediately (recommended):** inject ACIP into your `SOUL.md`/`AGENTS.md` so it’s guaranteed to be in the system prompt (the installer can do this with `ACIP_INJECT=1` and creates a timestamped backup).
+2. **Install only:** keep `SECURITY.md` in your workspace for versions of Clawdbot that load it directly (or future native support).
 
 ## Why ACIP for Clawdbot?
 
@@ -69,7 +69,23 @@ This script:
 - Backs up any existing `SECURITY.md`
 - Reports success or failure
 
-If Clawdbot doesn’t load `SECURITY.md` yet, the installer will offer to **inject** the security layer into `SOUL.md`/`AGENTS.md` so it’s active immediately.
+If your Clawdbot version doesn’t load `SECURITY.md` automatically, the installer will offer to **inject** the security layer into `SOUL.md`/`AGENTS.md` so it’s active immediately.
+
+Install + activate immediately:
+
+```bash
+ACIP_INJECT=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
+  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+```
+
+Status / verify (no changes):
+
+```bash
+ACIP_STATUS=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
+  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+```
+
+Tip: if you hit GitHub API rate limits, set `GITHUB_TOKEN` (or `GH_TOKEN`) before running the installer.
 
 ### Option 3: Clawdbot CLI (Coming Soon)
 
@@ -141,6 +157,13 @@ curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/.checksum
 ```
 
 The manifest contains SHA256 checksums for all ACIP files, generated automatically by GitHub Actions on each update.
+
+To verify activation (injection):
+
+```bash
+grep -n "ACIP:BEGIN clawdbot SECURITY.md" ~/clawd/SOUL.md 2>/dev/null || true
+grep -n "ACIP:BEGIN clawdbot SECURITY.md" ~/clawd/AGENTS.md 2>/dev/null || true
+```
 
 ## Updating
 

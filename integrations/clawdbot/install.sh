@@ -16,20 +16,33 @@
 #   ACIP_NONINTERACTIVE=1       - Skip prompts, fail if workspace doesn't exist
 #   ACIP_FORCE=1                - Overwrite without backup
 #   ACIP_QUIET=1                - Minimal output
+#   ACIP_STATUS=1               - Show install/activation status (no changes)
 #   ACIP_UNINSTALL=1            - Remove SECURITY.md instead of installing
 #   ACIP_ALLOW_UNVERIFIED=1     - Allow install if checksum manifest can't be fetched (NOT recommended)
-#   ACIP_INJECT=1               - (Optional) Inject ACIP into SOUL.md/AGENTS.md so it's active even if clawdbot doesn't load SECURITY.md yet
+#   ACIP_INJECT=1               - (Optional) Inject ACIP into SOUL.md/AGENTS.md so it's active even if your Clawdbot version doesn't load SECURITY.md automatically
 #   ACIP_INJECT_FILE=SOUL.md    - Injection target (SOUL.md or AGENTS.md; default: SOUL.md)
 #
 # Examples:
 #   # Standard install
-#   curl -fsSL ".../install.sh?ts=$(date +%s)" | bash
+#   curl -fsSL -H "Accept: application/vnd.github.raw" \
+#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+#
+#   # Install + activate immediately (inject into SOUL.md/AGENTS.md)
+#   ACIP_INJECT=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
+#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+#
+#   # Status / verify
+#   ACIP_STATUS=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
+#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
 #
 #   # Custom workspace, non-interactive
-#   CLAWD_WORKSPACE=~/assistant ACIP_NONINTERACTIVE=1 curl -fsSL ".../install.sh?ts=$(date +%s)" | bash
+#   CLAWD_WORKSPACE=~/assistant ACIP_NONINTERACTIVE=1 ACIP_INJECT=1 \
+#     curl -fsSL -H "Accept: application/vnd.github.raw" \
+#       "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
 #
 #   # Uninstall
-#   ACIP_UNINSTALL=1 curl -fsSL ".../install.sh?ts=$(date +%s)" | bash
+#   ACIP_UNINSTALL=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
+#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
 #
 
 set -euo pipefail
@@ -38,10 +51,11 @@ set -euo pipefail
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-readonly SCRIPT_VERSION="1.1.5"
+readonly SCRIPT_VERSION="1.1.6"
 readonly ACIP_REPO="Dicklesworthstone/acip"
 readonly ACIP_BRANCH="main"
 readonly SECURITY_FILE="integrations/clawdbot/SECURITY.md"
+readonly INSTALLER_API_URL="https://api.github.com/repos/${ACIP_REPO}/contents/integrations/clawdbot/install.sh?ref=${ACIP_BRANCH}"
 readonly BASE_URL="https://raw.githubusercontent.com/${ACIP_REPO}/${ACIP_BRANCH}"
 readonly MANIFEST_URL="${BASE_URL}/.checksums/manifest.json"
 readonly SECURITY_URL="${BASE_URL}/${SECURITY_FILE}"
@@ -53,6 +67,7 @@ WORKSPACE_OVERRIDE="${CLAWD_WORKSPACE:-}"
 NONINTERACTIVE="${ACIP_NONINTERACTIVE:-0}"
 FORCE="${ACIP_FORCE:-0}"
 QUIET="${ACIP_QUIET:-0}"
+STATUS="${ACIP_STATUS:-0}"
 UNINSTALL="${ACIP_UNINSTALL:-0}"
 ALLOW_UNVERIFIED="${ACIP_ALLOW_UNVERIFIED:-0}"
 INJECT="${ACIP_INJECT:-0}"
@@ -334,10 +349,17 @@ sha256() {
 fetch_manifest() {
   local api_url="https://api.github.com/repos/${ACIP_REPO}/contents/.checksums/manifest.json?ref=${ACIP_BRANCH}"
   local ua="acip-clawdbot-installer/${SCRIPT_VERSION}"
+  local auth=()
+
+  local gh_token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+  if [[ -n "$gh_token" ]]; then
+    auth=(-H "Authorization: Bearer ${gh_token}")
+  fi
 
   if curl -fsSL --show-error --max-time 10 \
     -H "Accept: application/vnd.github.raw" \
     -H "User-Agent: ${ua}" \
+    "${auth[@]}" \
     "$api_url"; then
     return 0
   fi
@@ -621,16 +643,33 @@ download_security_file() {
   tmp_file="$(tmpfile)"
 
   local url="$SECURITY_URL"
+  local api_url="https://api.github.com/repos/${ACIP_REPO}/contents/${SECURITY_FILE}?ref=${ACIP_BRANCH}"
+  local ua="acip-clawdbot-installer/${SCRIPT_VERSION}"
+  local auth=()
   if [[ -n "${ref:-}" ]]; then
     url=$(security_url_for_ref "$ref")
+    api_url="https://api.github.com/repos/${ACIP_REPO}/contents/${SECURITY_FILE}?ref=${ref}"
+  fi
+
+  local gh_token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+  if [[ -n "$gh_token" ]]; then
+    auth=(-H "Authorization: Bearer ${gh_token}")
   fi
 
   if ! curl -fsSL --show-error --max-time 30 "$url" -o "$tmp_file"; then
-    log_error "Failed to download SECURITY.md"
-    echo ""
-    echo "  URL: ${url}"
-    echo "  Please check your network connection and try again."
-    exit 1
+    # Fallback to GitHub Contents API (some networks block raw.githubusercontent.com)
+    if ! curl -fsSL --show-error --max-time 30 \
+      -H "Accept: application/vnd.github.raw" \
+      -H "User-Agent: ${ua}" \
+      "${auth[@]}" \
+      "$api_url" -o "$tmp_file"; then
+      log_error "Failed to download SECURITY.md"
+      echo ""
+      echo "  URL (raw): ${url}"
+      echo "  URL (api): ${api_url}"
+      echo "  Please check your network connection and try again."
+      exit 1
+    fi
   fi
 
   # Validate file is not empty or error page
@@ -703,7 +742,7 @@ install() {
       echo "  Check your network and try again."
       echo ""
       echo "  To override (NOT recommended):"
-      echo "    ACIP_ALLOW_UNVERIFIED=1 curl -fsSL \"${BASE_URL}/integrations/clawdbot/install.sh?ts=$(date +%s)\" | bash"
+      echo "    ACIP_ALLOW_UNVERIFIED=1 curl -fsSL -H \"Accept: application/vnd.github.raw\" \"${INSTALLER_API_URL}\" | bash"
       exit 1
     fi
   fi
@@ -739,11 +778,11 @@ install() {
           activated="1"
         fi
       elif [[ "$NONINTERACTIVE" == "1" ]]; then
-        log_warn "Clawdbot doesn't load SECURITY.md by default; ACIP may not be active yet"
+        log_warn "Your Clawdbot version may not load SECURITY.md automatically; ACIP may not be active yet"
         log_info "To activate now: ACIP_INJECT=1 ${ARROW} inject into ${INJECT_FILE}"
       else
         echo ""
-        log_warn "Clawdbot doesn't load SECURITY.md by default"
+        log_warn "Your Clawdbot version may not load SECURITY.md automatically"
         if prompt_yn "Activate now by injecting ACIP into ${inject_target}?" "Y"; then
           if ensure_inject_target_exists "$inject_target"; then
             backup_file "$inject_target" "backup"
@@ -779,6 +818,136 @@ install() {
   echo "  ${BOLD}Documentation:${RESET}"
   echo "    ${DIM}https://github.com/${ACIP_REPO}/tree/main/integrations/clawdbot${RESET}"
   echo ""
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Status / Verification (No Changes)
+# ─────────────────────────────────────────────────────────────────────────────
+
+status() {
+  print_banner
+  check_requirements
+
+  log_step "Checking workspace: ${DIM}${WORKSPACE}${RESET}"
+
+  if [[ ! -d "$WORKSPACE" ]]; then
+    log_error "Workspace directory does not exist"
+    echo ""
+    echo "  Set ${BOLD}CLAWD_WORKSPACE${RESET} to your Clawdbot workspace (or create it), then re-run."
+    echo ""
+    exit 1
+  fi
+
+  log_success "Workspace exists"
+
+  local installed="0"
+  local verified="0"
+  local activated="0"
+
+  if [[ -f "$TARGET_FILE" ]]; then
+    installed="1"
+    log_success "SECURITY.md present: ${DIM}${TARGET_FILE}${RESET}"
+  else
+    log_warn "SECURITY.md not found: ${TARGET_FILE}"
+  fi
+
+  local actual_checksum=""
+  if [[ "$installed" == "1" ]]; then
+    actual_checksum="$(sha256 "$TARGET_FILE" 2>/dev/null || true)"
+  fi
+
+  local manifest=""
+  local manifest_commit=""
+  local expected_checksum=""
+
+  log_step "Fetching checksum manifest..."
+  if manifest=$(fetch_manifest); then
+    if manifest_commit=$(extract_manifest_commit "$manifest"); then
+      if expected_checksum=$(fetch_expected_checksum "$manifest"); then
+        :
+      else
+        expected_checksum=""
+      fi
+    fi
+  fi
+
+  if [[ "$installed" == "1" && ${#expected_checksum} -eq 64 && ${#actual_checksum} -eq 64 ]]; then
+    if [[ "$actual_checksum" == "$expected_checksum" ]]; then
+      verified="1"
+      log_success "Checksum verified: ${DIM}${actual_checksum:0:16}...${RESET}"
+    else
+      log_warn "Checksum mismatch (local file differs from official)"
+      echo ""
+      echo "  Expected: ${expected_checksum}"
+      echo "  Actual:   ${actual_checksum}"
+      echo ""
+      echo "  If you customized SECURITY.md locally, this is expected."
+    fi
+  elif [[ "$installed" == "1" ]]; then
+    log_warn "Could not verify checksum (manifest unavailable)"
+    if [[ ${#actual_checksum} -eq 64 ]]; then
+      log_info "Local checksum: ${actual_checksum}"
+    fi
+  fi
+
+  local injected_files=()
+  local f=""
+  for f in "${WORKSPACE%/}/SOUL.md" "${WORKSPACE%/}/AGENTS.md"; do
+    if [[ -f "$f" ]] && file_has_injection "$f"; then
+      injected_files+=("$f")
+    fi
+  done
+
+  if [[ ${#injected_files[@]} -gt 0 ]]; then
+    activated="1"
+    log_success "Injection block present:"
+    for f in "${injected_files[@]}"; do
+      echo "  - ${f}"
+    done
+  elif has_clawdbot_security_cli; then
+    activated="1"
+    log_success "Detected Clawdbot security CLI"
+    CLAWD_WORKSPACE="$WORKSPACE" clawdbot security status 2>/dev/null || true
+  else
+    log_warn "Activation unknown (no injection markers and no 'clawdbot security' CLI detected)"
+  fi
+
+  echo ""
+  echo "  ${BOLD}Summary:${RESET}"
+  echo "    Workspace: ${WORKSPACE}"
+  echo "    Installed: $([[ "$installed" == "1" ]] && echo yes || echo no)"
+  if [[ "$installed" == "1" ]]; then
+    if [[ "$verified" == "1" ]]; then
+      echo "    Verified:  yes"
+    elif [[ ${#expected_checksum} -eq 64 ]]; then
+      echo "    Verified:  no"
+    else
+      echo "    Verified:  unknown (manifest unavailable)"
+    fi
+  fi
+  if [[ "$activated" == "1" ]]; then
+    echo "    Active:    yes"
+  else
+    echo "    Active:    unknown"
+  fi
+  echo ""
+
+  if [[ "$installed" != "1" ]]; then
+    echo "  To install:"
+    echo "    curl -fsSL -H \"Accept: application/vnd.github.raw\" \"${INSTALLER_API_URL}\" | bash"
+    echo ""
+  fi
+
+  if [[ "$activated" != "1" ]]; then
+    echo "  To activate now (recommended):"
+    echo "    ACIP_INJECT=1 curl -fsSL -H \"Accept: application/vnd.github.raw\" \"${INSTALLER_API_URL}\" | bash"
+    echo ""
+  fi
+
+  if [[ "$installed" == "1" && "$verified" == "1" ]]; then
+    exit 0
+  fi
+  exit 1
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -847,13 +1016,14 @@ ACIP Installer for Clawdbot v${SCRIPT_VERSION}
 
 Usage:
   curl -fsSL -H "Accept: application/vnd.github.raw" \\
-    "https://api.github.com/repos/${ACIP_REPO}/contents/integrations/clawdbot/install.sh?ref=${ACIP_BRANCH}" | bash
+    "${INSTALLER_API_URL}" | bash
 
 Environment Variables:
   CLAWD_WORKSPACE         Workspace directory (default: auto-detect from clawdbot.json, else ~/clawd)
   ACIP_NONINTERACTIVE     Skip prompts; fail if workspace doesn't exist
   ACIP_FORCE              Overwrite without backup
   ACIP_QUIET              Minimal output
+  ACIP_STATUS             Show install/activation status (no changes)
   ACIP_UNINSTALL          Remove SECURITY.md instead of installing
   ACIP_ALLOW_UNVERIFIED   Allow install if manifest can't be fetched (NOT recommended)
   ACIP_INJECT             Inject ACIP into SOUL.md/AGENTS.md so it's active today
@@ -862,17 +1032,22 @@ Environment Variables:
 Examples:
   # Standard install
   curl -fsSL -H "Accept: application/vnd.github.raw" \\
-    "https://api.github.com/repos/${ACIP_REPO}/contents/integrations/clawdbot/install.sh?ref=${ACIP_BRANCH}" | bash
+    "${INSTALLER_API_URL}" | bash
+
+  # Status / verify
+  ACIP_STATUS=1 \\
+    curl -fsSL -H "Accept: application/vnd.github.raw" \\
+      "${INSTALLER_API_URL}" | bash
 
   # Custom workspace, non-interactive
   CLAWD_WORKSPACE=~/assistant ACIP_NONINTERACTIVE=1 \\
     curl -fsSL -H "Accept: application/vnd.github.raw" \\
-      "https://api.github.com/repos/${ACIP_REPO}/contents/integrations/clawdbot/install.sh?ref=${ACIP_BRANCH}" | bash
+      "${INSTALLER_API_URL}" | bash
 
   # Uninstall
   ACIP_UNINSTALL=1 \\
     curl -fsSL -H "Accept: application/vnd.github.raw" \\
-      "https://api.github.com/repos/${ACIP_REPO}/contents/integrations/clawdbot/install.sh?ref=${ACIP_BRANCH}" | bash
+      "${INSTALLER_API_URL}" | bash
 
 More info: https://github.com/${ACIP_REPO}
 EOF
@@ -895,7 +1070,9 @@ main() {
     exit 0
   fi
 
-  if [[ "$UNINSTALL" == "1" ]]; then
+  if [[ "$STATUS" == "1" ]]; then
+    status
+  elif [[ "$UNINSTALL" == "1" ]]; then
     uninstall
   else
     install
