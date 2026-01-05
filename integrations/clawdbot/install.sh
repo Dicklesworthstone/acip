@@ -38,7 +38,7 @@ set -euo pipefail
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-readonly SCRIPT_VERSION="1.1.3"
+readonly SCRIPT_VERSION="1.1.4"
 readonly ACIP_REPO="Dicklesworthstone/acip"
 readonly ACIP_BRANCH="main"
 readonly SECURITY_FILE="integrations/clawdbot/SECURITY.md"
@@ -139,11 +139,14 @@ cleanup() {
 
 print_banner() {
   [[ "$QUIET" == "1" ]] && return
+  local inner_width=59
+  local line1="     ACIP Installer for Clawdbot  v${SCRIPT_VERSION}"
+  local line2="     Advanced Cognitive Inoculation Prompt"
   echo ""
-  echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${RESET}"
-  echo -e "${CYAN}║${RESET}     ${BOLD}${WHITE}ACIP Installer for Clawdbot${RESET}  ${DIM}v${SCRIPT_VERSION}${RESET}              ${CYAN}║${RESET}"
-  echo -e "${CYAN}║${RESET}     ${DIM}Advanced Cognitive Inoculation Prompt${RESET}                 ${CYAN}║${RESET}"
-  echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${RESET}"
+  printf "%b\n" "${CYAN}╔═══════════════════════════════════════════════════════════╗${RESET}"
+  printf "%b\n" "${CYAN}║${RESET}${BOLD}${WHITE}$(printf '%-*s' "$inner_width" "$line1")${RESET}${CYAN}║${RESET}"
+  printf "%b\n" "${CYAN}║${RESET}${DIM}$(printf '%-*s' "$inner_width" "$line2")${RESET}${CYAN}║${RESET}"
+  printf "%b\n" "${CYAN}╚═══════════════════════════════════════════════════════════╝${RESET}"
   echo ""
 }
 
