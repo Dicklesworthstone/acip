@@ -206,13 +206,12 @@ jobs:
              [ -f .checksums/manifest.json.sig ] && \
              [ -f .checksums/manifest.json.pem ]; then
             echo "Manifest unchanged and signature/cert already present; skipping signing."
-            exit 0
+          else
+            cosign sign-blob --yes \
+              --output-signature .checksums/manifest.json.sig \
+              --output-certificate .checksums/manifest.json.pem \
+              .checksums/manifest.json
           fi
-
-          cosign sign-blob --yes \
-            --output-signature .checksums/manifest.json.sig \
-            --output-certificate .checksums/manifest.json.pem \
-            .checksums/manifest.json
 
           # Normalize certificate to PEM for easier manual verification.
           if ! grep -q "BEGIN CERTIFICATE" .checksums/manifest.json.pem; then
