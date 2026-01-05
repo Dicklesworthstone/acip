@@ -520,8 +520,38 @@ manifest_signature_status() {
     return 3 # signed, but cannot verify
   fi
 
+  # cosign signatures are base64; certificates may be PEM or base64-encoded PEM (depends on cosign version).
+  # We try both formats to maximize compatibility.
+  local cert_to_use="$cert_file"
+
+  if ! grep -q "BEGIN CERTIFICATE" "$cert_file" 2>/dev/null; then
+    # First try as-is (some cosign versions accept base64 certificate input).
+    if cosign verify-blob \
+      --certificate "$cert_file" \
+      --signature "$sig_file" \
+      --certificate-identity "$COSIGN_CERT_IDENTITY" \
+      --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" \
+      "$manifest_file" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    # Then try decoding base64 -> PEM.
+    local decoded
+    decoded="$(tmpfile)"
+
+    if command -v base64 >/dev/null 2>&1; then
+      base64 -d "$cert_file" > "$decoded" 2>/dev/null || base64 -D "$cert_file" > "$decoded" 2>/dev/null || true
+    elif command -v openssl >/dev/null 2>&1; then
+      openssl base64 -d -in "$cert_file" -out "$decoded" 2>/dev/null || true
+    fi
+
+    if grep -q "BEGIN CERTIFICATE" "$decoded" 2>/dev/null; then
+      cert_to_use="$decoded"
+    fi
+  fi
+
   cosign verify-blob \
-    --certificate "$cert_file" \
+    --certificate "$cert_to_use" \
     --signature "$sig_file" \
     --certificate-identity "$COSIGN_CERT_IDENTITY" \
     --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" \
