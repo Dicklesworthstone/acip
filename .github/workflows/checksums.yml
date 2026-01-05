@@ -11,8 +11,7 @@ name: Generate ACIP Checksums
   workflow_dispatch:
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
 
 concurrency:
   group: acip-checksums-main
@@ -22,42 +21,19 @@ jobs:
   generate-checksums:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
-          ref: main
-
-      - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: '3.11'
-
-      - name: Install tiktoken
-        run: python -m pip install --disable-pip-version-check --no-cache-dir tiktoken==0.12.0
-
-      - name: Install cosign
-        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
-        with:
-          cosign-release: 'v3.0.3'
+          ref: ${{ github.sha }}
 
       - name: Generate checksums and manifest
         run: |
           # Create checksums directory
           mkdir -p .checksums
-
-          # Helper function to count tokens using tiktoken
-          count_tokens() {
-            python -c "
-          import tiktoken
-          import sys
-          enc = tiktoken.get_encoding('cl100k_base')
-          with open(sys.argv[1], 'r', encoding='utf-8') as f:
-              text = f.read()
-          print(len(enc.encode(text)))
-          " "$1"
-          }
 
           # Generate SHA256 checksums for all ACIP files
           echo "Generating checksums for ACIP files..."
@@ -97,9 +73,6 @@ jobs:
               # Get line count
               LINES=$(wc -l < "$file" | tr -d ' ')
 
-              # Count tokens using tiktoken (cl100k_base encoding)
-              TOKENS=$(count_tokens "$file")
-
               # Write individual checksum file
               echo "$CHECKSUM  $file" > ".checksums/${file%.md}.sha256"
 
@@ -117,7 +90,7 @@ jobs:
                   \"sha256\": \"$CHECKSUM\",
                   \"size_bytes\": $SIZE,
                   \"lines\": $LINES,
-                  \"tokens\": $TOKENS,
+                  \"tokens\": null,
                   \"raw_url\": \"https://raw.githubusercontent.com/${{ github.repository }}/$COMMIT/$file\"
                 }"
             fi
@@ -146,9 +119,6 @@ jobs:
               # Get line count
               INT_LINES=$(wc -l < "$intfile" | tr -d ' ')
 
-              # Count tokens using tiktoken (cl100k_base encoding)
-              INT_TOKENS=$(count_tokens "$intfile")
-
               # Write individual checksum file
               SAFE_NAME=$(echo "$intfile" | tr '/' '_')
               echo "$INT_CHECKSUM  $intfile" > ".checksums/${SAFE_NAME%.md}.sha256"
@@ -167,7 +137,7 @@ jobs:
                   \"sha256\": \"$INT_CHECKSUM\",
                   \"size_bytes\": $INT_SIZE,
                   \"lines\": $INT_LINES,
-                  \"tokens\": $INT_TOKENS,
+                  \"tokens\": null,
                   \"raw_url\": \"https://raw.githubusercontent.com/${{ github.repository }}/$COMMIT/$intfile\"
                 }"
           done < <(find integrations -type f \( -name '*.md' -o -name '*.sh' \) -print | LC_ALL=C sort -u)
@@ -186,7 +156,7 @@ jobs:
             "commit": "$COMMIT",
             "recommended_version": "$RECOMMENDED_VERSION",
             "latest_version": "$LATEST_VERSION",
-            "tokenizer": "tiktoken/cl100k_base",
+            "tokenizer": null,
             "versions": $VERSIONS_JSON,
             "integrations": $INTEGRATIONS_JSON,
             "verification": {
@@ -201,6 +171,41 @@ jobs:
 
           # Also create a combined checksums file
           cat .checksums/*.sha256 > .checksums/SHA256SUMS 2>/dev/null || true
+
+      - name: Upload generated checksums (unsigned) as artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: acip-checksums
+          path: .checksums/
+          retention-days: 7
+
+  sign-and-commit:
+    if: github.ref == 'refs/heads/main'
+    needs: generate-checksums
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.sha }}
+
+      - name: Replace .checksums from generated artifact
+        run: rm -rf .checksums
+
+      - name: Download generated checksums
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: acip-checksums
+          path: .checksums
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
+        with:
+          cosign-release: 'v3.0.3'
 
       - name: Sign manifest (keyless)
         run: |
@@ -230,18 +235,17 @@ jobs:
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
-          # Check if there are changes
           git add .checksums/
           if git diff --staged --quiet; then
             echo "No changes to checksums"
           else
             git commit -m "Update ACIP checksums [skip ci]"
-            git push
+            git push origin HEAD:main
           fi
 
       - name: Upload checksums as artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: acip-checksums
+          name: acip-checksums-signed
           path: .checksums/
           retention-days: 90
