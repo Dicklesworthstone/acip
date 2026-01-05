@@ -8,16 +8,19 @@ on:
       - 'integrations/**'
       - 'README.md'
       - '.github/workflows/checksums.yml'
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions:
   contents: write
   id-token: write
 
+concurrency:
+  group: acip-checksums-main
+  cancel-in-progress: true
+
 jobs:
   generate-checksums:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

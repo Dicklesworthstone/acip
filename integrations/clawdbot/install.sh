@@ -63,7 +63,7 @@ set -euo pipefail
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-readonly SCRIPT_VERSION="1.1.9"
+readonly SCRIPT_VERSION="1.1.10"
 readonly ACIP_REPO="Dicklesworthstone/acip"
 readonly ACIP_BRANCH="main"
 readonly SECURITY_FILE="integrations/clawdbot/SECURITY.md"
@@ -740,7 +740,7 @@ resolve_inject_target() {
 
 file_has_injection() {
   local file="$1"
-  grep -q "$INJECT_BEGIN" "$file" 2>/dev/null && grep -q "$INJECT_END" "$file" 2>/dev/null
+  grep -Fq "$INJECT_BEGIN" "$file" 2>/dev/null && grep -Fq "$INJECT_END" "$file" 2>/dev/null
 }
 
 ensure_inject_target_exists() {
