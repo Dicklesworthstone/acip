@@ -59,7 +59,9 @@ ACIP provides a cognitive security layer that helps Clawd recognize and resist t
 ### Option 2: Automated Script
 
 ```bash
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/install.sh?ts=$(date +%s)" | bash
+ACIP_SHA=$(curl -fsSL https://api.github.com/repos/Dicklesworthstone/acip/commits/main \
+  | grep -m1 '"sha"' | cut -d'"' -f4) && \
+curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/acip/${ACIP_SHA}/integrations/clawdbot/install.sh" | bash
 ```
 
 This script:

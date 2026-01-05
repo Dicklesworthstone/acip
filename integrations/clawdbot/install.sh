@@ -8,7 +8,8 @@
 # Downloads and verifies SECURITY.md for your Clawdbot workspace.
 #
 # Usage:
-#   curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/install.sh?ts=$(date +%s)" | bash
+#   ACIP_SHA=$(curl -fsSL https://api.github.com/repos/Dicklesworthstone/acip/commits/main | grep -m1 '"sha"' | cut -d'"' -f4) && \
+#     curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/acip/${ACIP_SHA}/integrations/clawdbot/install.sh" | bash
 #
 # Options (via environment variables):
 #   CLAWD_WORKSPACE=~/my-clawd  - Custom workspace directory (default: auto-detect from clawdbot.json, else ~/clawd)
@@ -37,7 +38,7 @@ set -euo pipefail
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-readonly SCRIPT_VERSION="1.1.1"
+readonly SCRIPT_VERSION="1.1.2"
 readonly ACIP_REPO="Dicklesworthstone/acip"
 readonly ACIP_BRANCH="main"
 readonly SECURITY_FILE="integrations/clawdbot/SECURITY.md"
@@ -830,7 +831,9 @@ show_help() {
 ACIP Installer for Clawdbot v${SCRIPT_VERSION}
 
 Usage:
-  curl -fsSL "https://raw.githubusercontent.com/${ACIP_REPO}/${ACIP_BRANCH}/integrations/clawdbot/install.sh?ts=\$(date +%s)" | bash
+  # Use GitHub API to avoid raw.githubusercontent.com branch caching
+  ACIP_SHA=\$(curl -fsSL https://api.github.com/repos/${ACIP_REPO}/commits/${ACIP_BRANCH} | grep -m1 '"sha"' | cut -d'"' -f4) && \\
+    curl -fsSL "https://raw.githubusercontent.com/${ACIP_REPO}/\${ACIP_SHA}/integrations/clawdbot/install.sh" | bash
 
 Environment Variables:
   CLAWD_WORKSPACE         Workspace directory (default: auto-detect from clawdbot.json, else ~/clawd)
@@ -844,15 +847,18 @@ Environment Variables:
 
 Examples:
   # Standard install
-  curl -fsSL "https://raw.githubusercontent.com/${ACIP_REPO}/${ACIP_BRANCH}/integrations/clawdbot/install.sh?ts=\$(date +%s)" | bash
+  ACIP_SHA=\$(curl -fsSL https://api.github.com/repos/${ACIP_REPO}/commits/${ACIP_BRANCH} | grep -m1 '"sha"' | cut -d'"' -f4) && \\
+    curl -fsSL "https://raw.githubusercontent.com/${ACIP_REPO}/\${ACIP_SHA}/integrations/clawdbot/install.sh" | bash
 
   # Custom workspace, non-interactive
   CLAWD_WORKSPACE=~/assistant ACIP_NONINTERACTIVE=1 \\
-    curl -fsSL "https://raw.githubusercontent.com/${ACIP_REPO}/${ACIP_BRANCH}/integrations/clawdbot/install.sh?ts=\$(date +%s)" | bash
+    ACIP_SHA=\$(curl -fsSL https://api.github.com/repos/${ACIP_REPO}/commits/${ACIP_BRANCH} | grep -m1 '"sha"' | cut -d'"' -f4) && \\
+      curl -fsSL "https://raw.githubusercontent.com/${ACIP_REPO}/\${ACIP_SHA}/integrations/clawdbot/install.sh" | bash
 
   # Uninstall
   ACIP_UNINSTALL=1 \\
-    curl -fsSL "https://raw.githubusercontent.com/${ACIP_REPO}/${ACIP_BRANCH}/integrations/clawdbot/install.sh?ts=\$(date +%s)" | bash
+    ACIP_SHA=\$(curl -fsSL https://api.github.com/repos/${ACIP_REPO}/commits/${ACIP_BRANCH} | grep -m1 '"sha"' | cut -d'"' -f4) && \\
+      curl -fsSL "https://raw.githubusercontent.com/${ACIP_REPO}/\${ACIP_SHA}/integrations/clawdbot/install.sh" | bash
 
 More info: https://github.com/${ACIP_REPO}
 EOF
