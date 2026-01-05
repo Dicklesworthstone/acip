@@ -215,6 +215,8 @@ jobs:
             echo "Manifest unchanged and signature/cert already present; skipping signing."
           else
             cosign sign-blob --yes \
+              --bundle .checksums/manifest.json.bundle \
+              --new-bundle-format=true \
               --output-signature .checksums/manifest.json.sig \
               --output-certificate .checksums/manifest.json.pem \
               .checksums/manifest.json

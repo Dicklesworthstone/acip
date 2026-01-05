@@ -63,7 +63,7 @@ set -euo pipefail
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-readonly SCRIPT_VERSION="1.1.18"
+readonly SCRIPT_VERSION="1.1.19"
 readonly ACIP_REPO="Dicklesworthstone/acip"
 readonly ACIP_BRANCH="main"
 readonly SECURITY_FILE="integrations/clawdbot/SECURITY.md"
@@ -73,6 +73,7 @@ readonly INSTALLER_API_URL="https://api.github.com/repos/${ACIP_REPO}/contents/i
 readonly BASE_URL="https://raw.githubusercontent.com/${ACIP_REPO}/${ACIP_BRANCH}"
 readonly MANIFEST_SIG_PATH=".checksums/manifest.json.sig"
 readonly MANIFEST_CERT_PATH=".checksums/manifest.json.pem"
+readonly MANIFEST_BUNDLE_PATH=".checksums/manifest.json.bundle"
 readonly MANIFEST_COMMIT_PATH=".checksums/manifest.json"
 readonly COSIGN_OIDC_ISSUER="https://token.actions.githubusercontent.com"
 readonly COSIGN_CERT_IDENTITY="https://github.com/${ACIP_REPO}/.github/workflows/checksums.yml@refs/heads/${ACIP_BRANCH}"
@@ -547,6 +548,38 @@ fetch_expected_checksum() {
   echo "$checksum"
 }
 
+fetch_manifest_bundle() {
+  local bundle_out="$1"
+  local ref="${2:-}"
+  if [[ -z "$ref" ]]; then
+    ref="$ACIP_BRANCH"
+  fi
+
+  local ua="acip-clawdbot-installer/${SCRIPT_VERSION}"
+  local auth=()
+  local gh_token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+  if [[ -n "$gh_token" ]]; then
+    auth=(-H "Authorization: Bearer ${gh_token}")
+  fi
+
+  local api_url="https://api.github.com/repos/${ACIP_REPO}/contents/${MANIFEST_BUNDLE_PATH}?ref=${ref}"
+  local url_raw="https://raw.githubusercontent.com/${ACIP_REPO}/${ref}/${MANIFEST_BUNDLE_PATH}"
+
+  if ! curl -fsSL --max-time 10 \
+    -H "Accept: application/vnd.github.raw" \
+    -H "User-Agent: ${ua}" \
+    "${auth[@]}" \
+    "$api_url" -o "$bundle_out" 2>/dev/null; then
+    if ! curl -fsSL --max-time 10 \
+      -H "User-Agent: ${ua}" \
+      "$url_raw" -o "$bundle_out" 2>/dev/null; then
+      return 1
+    fi
+  fi
+
+  [[ -s "$bundle_out" ]]
+}
+
 fetch_manifest_signing_material() {
   local sig_out="$1"
   local cert_out="$2"
@@ -596,11 +629,27 @@ fetch_manifest_signing_material() {
 
 manifest_signature_status() {
   local manifest_file="$1"
-  local sig_file="$2"
-  local cert_file="$3"
+  local bundle_file="${2:-}"
+  local sig_file="${3:-}"
+  local cert_file="${4:-}"
 
-  if [[ ! -s "$sig_file" || ! -s "$cert_file" ]]; then
-    return 2 # unsigned
+  if [[ -n "${bundle_file:-}" && -s "$bundle_file" ]]; then
+    if ! command -v cosign >/dev/null 2>&1; then
+      return 3 # signed, but cannot verify
+    fi
+
+    # Bundles include all verification material; verify offline (no Rekor calls).
+    cosign verify-blob \
+      --offline=true \
+      --bundle "$bundle_file" \
+      --certificate-identity "$COSIGN_CERT_IDENTITY" \
+      --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" \
+      "$manifest_file" >/dev/null 2>&1
+    return $?
+  fi
+
+  if [[ -z "${sig_file:-}" || -z "${cert_file:-}" || ! -s "$sig_file" || ! -s "$cert_file" ]]; then
+    return 2 # unsigned / unavailable
   fi
 
   if ! command -v cosign >/dev/null 2>&1; then
@@ -1059,12 +1108,39 @@ install() {
 
   if fetch_manifest_to_file "$manifest_file" "$checksums_ref"; then
 
+    local bundle_file
     local sig_file
     local cert_file
+    bundle_file="$(tmpfile)"
     sig_file="$(tmpfile)"
     cert_file="$(tmpfile)"
 
-    if fetch_manifest_signing_material "$sig_file" "$cert_file" "$checksums_ref"; then
+    if fetch_manifest_bundle "$bundle_file" "$checksums_ref"; then
+      if command -v cosign >/dev/null 2>&1; then
+        log_step "Verifying manifest signature (cosign bundle)..."
+      else
+        log_info "Manifest signature bundle present (install cosign to verify)"
+      fi
+
+      local sig_rc=0
+      manifest_signature_status "$manifest_file" "$bundle_file" || sig_rc=$?
+      if [[ "$sig_rc" == "0" ]]; then
+        log_success "Manifest signature verified"
+      elif [[ "$sig_rc" == "3" ]]; then
+        :
+      else
+        log_error "Manifest signature verification failed"
+        if [[ "$ALLOW_UNVERIFIED" == "1" ]]; then
+          log_warn "Continuing because ACIP_ALLOW_UNVERIFIED=1"
+        else
+          echo ""
+          echo "  Refusing to proceed with an untrusted checksum manifest."
+          echo "  To override (NOT recommended):"
+          echo "    ACIP_ALLOW_UNVERIFIED=1 curl -fsSL -H \"Accept: application/vnd.github.raw\" \"${INSTALLER_API_URL}&ts=\$(date +%s)\" | bash"
+          exit 1
+        fi
+      fi
+    elif fetch_manifest_signing_material "$sig_file" "$cert_file" "$checksums_ref"; then
       if command -v cosign >/dev/null 2>&1; then
         log_step "Verifying manifest signature (cosign)..."
       else
@@ -1072,7 +1148,7 @@ install() {
       fi
 
       local sig_rc=0
-      manifest_signature_status "$manifest_file" "$sig_file" "$cert_file" || sig_rc=$?
+      manifest_signature_status "$manifest_file" "" "$sig_file" "$cert_file" || sig_rc=$?
       if [[ "$sig_rc" == "0" ]]; then
         log_success "Manifest signature verified"
       elif [[ "$sig_rc" == "3" ]]; then
@@ -1336,14 +1412,29 @@ status() {
   manifest_file="$(tmpfile)"
   checksums_ref="$(resolve_checksums_ref 2>/dev/null || true)"
   if fetch_manifest_to_file "$manifest_file" "$checksums_ref"; then
+    local bundle_file
     local sig_file
     local cert_file
+    bundle_file="$(tmpfile)"
     sig_file="$(tmpfile)"
     cert_file="$(tmpfile)"
 
-    if fetch_manifest_signing_material "$sig_file" "$cert_file" "$checksums_ref"; then
+    if fetch_manifest_bundle "$bundle_file" "$checksums_ref"; then
       local sig_rc=0
-      manifest_signature_status "$manifest_file" "$sig_file" "$cert_file" || sig_rc=$?
+      manifest_signature_status "$manifest_file" "$bundle_file" || sig_rc=$?
+      if [[ "$sig_rc" == "0" ]]; then
+        manifest_sig="verified"
+        log_success "Manifest signature verified"
+      elif [[ "$sig_rc" == "3" ]]; then
+        manifest_sig="signed (cosign not installed)"
+        log_info "Manifest signature present (install cosign to verify)"
+      else
+        manifest_sig="invalid"
+        log_warn "Manifest signature verification failed"
+      fi
+    elif fetch_manifest_signing_material "$sig_file" "$cert_file" "$checksums_ref"; then
+      local sig_rc=0
+      manifest_signature_status "$manifest_file" "" "$sig_file" "$cert_file" || sig_rc=$?
       if [[ "$sig_rc" == "0" ]]; then
         manifest_sig="verified"
         log_success "Manifest signature verified"
