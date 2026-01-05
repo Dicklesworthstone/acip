@@ -8,14 +8,17 @@
 # Downloads and verifies SECURITY.md for your Clawdbot workspace.
 #
 # Usage:
-#   curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/install.sh | bash
+#   curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/install.sh?ts=$(date +%s)" | bash
 #
 # Options (via environment variables):
-#   CLAWD_WORKSPACE=~/my-clawd  - Custom workspace directory (default: ~/clawd)
+#   CLAWD_WORKSPACE=~/my-clawd  - Custom workspace directory (default: auto-detect from clawdbot.json, else ~/clawd)
 #   ACIP_NONINTERACTIVE=1       - Skip prompts, fail if workspace doesn't exist
 #   ACIP_FORCE=1                - Overwrite without backup
 #   ACIP_QUIET=1                - Minimal output
 #   ACIP_UNINSTALL=1            - Remove SECURITY.md instead of installing
+#   ACIP_ALLOW_UNVERIFIED=1     - Allow install if checksum manifest can't be fetched (NOT recommended)
+#   ACIP_INJECT=1               - (Optional) Inject ACIP into SOUL.md/AGENTS.md so it's active even if clawdbot doesn't load SECURITY.md yet
+#   ACIP_INJECT_FILE=SOUL.md    - Injection target (SOUL.md or AGENTS.md; default: SOUL.md)
 #
 # Examples:
 #   # Standard install
@@ -34,22 +37,29 @@ set -euo pipefail
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-readonly SCRIPT_VERSION="1.0.0"
+readonly SCRIPT_VERSION="1.1.0"
 readonly ACIP_REPO="Dicklesworthstone/acip"
 readonly ACIP_BRANCH="main"
 readonly SECURITY_FILE="integrations/clawdbot/SECURITY.md"
 readonly BASE_URL="https://raw.githubusercontent.com/${ACIP_REPO}/${ACIP_BRANCH}"
 readonly MANIFEST_URL="${BASE_URL}/.checksums/manifest.json"
 readonly SECURITY_URL="${BASE_URL}/${SECURITY_FILE}"
+readonly INJECT_BEGIN="<!-- ACIP:BEGIN clawdbot SECURITY.md -->"
+readonly INJECT_END="<!-- ACIP:END clawdbot SECURITY.md -->"
 
 # User-configurable via environment
-WORKSPACE="${CLAWD_WORKSPACE:-$HOME/clawd}"
+WORKSPACE_OVERRIDE="${CLAWD_WORKSPACE:-}"
 NONINTERACTIVE="${ACIP_NONINTERACTIVE:-0}"
 FORCE="${ACIP_FORCE:-0}"
 QUIET="${ACIP_QUIET:-0}"
 UNINSTALL="${ACIP_UNINSTALL:-0}"
+ALLOW_UNVERIFIED="${ACIP_ALLOW_UNVERIFIED:-0}"
+INJECT="${ACIP_INJECT:-0}"
+INJECT_FILE="${ACIP_INJECT_FILE:-SOUL.md}"
 
-TARGET_FILE="${WORKSPACE}/SECURITY.md"
+# Workspace is resolved at runtime (may be inferred from clawdbot.json)
+WORKSPACE=""
+TARGET_FILE=""
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Terminal Colors & Styling
@@ -135,6 +145,76 @@ detect_os() {
     MINGW*|MSYS*|CYGWIN*) echo "windows" ;;
     *)       echo "unknown" ;;
   esac
+}
+
+resolve_clawdbot_config_path() {
+  if [[ -n "${CLAWDBOT_CONFIG_PATH:-}" ]]; then
+    echo "${CLAWDBOT_CONFIG_PATH}"
+    return 0
+  fi
+  if [[ -n "${CLAWDBOT_STATE_DIR:-}" ]]; then
+    echo "${CLAWDBOT_STATE_DIR%/}/clawdbot.json"
+    return 0
+  fi
+  echo "${HOME}/.clawdbot/clawdbot.json"
+}
+
+detect_workspace_from_config() {
+  local cfg_path
+  cfg_path="$(resolve_clawdbot_config_path)"
+  [[ -f "$cfg_path" ]] || return 1
+
+  local ws
+  ws="$(perl -0777 -ne 'if (/"workspace"\s*:\s*["'"'"'"]([^"'"'"'\n]+)["'"'"'"]/s){print $1; exit}' "$cfg_path" 2>/dev/null || true)"
+  ws="$(echo "$ws" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  [[ -n "$ws" ]] || return 1
+
+  # Expand "~" if present
+  if [[ "$ws" == "~"* ]]; then
+    ws="${ws/#\~/$HOME}"
+  fi
+
+  echo "$ws"
+}
+
+resolve_workspace() {
+  if [[ -n "${WORKSPACE_OVERRIDE:-}" ]]; then
+    echo "${WORKSPACE_OVERRIDE/#\~/$HOME}"
+    return 0
+  fi
+
+  local inferred
+  inferred="$(detect_workspace_from_config || true)"
+  if [[ -n "$inferred" ]]; then
+    echo "$inferred"
+    return 0
+  fi
+
+  echo "${HOME}/clawd"
+}
+
+has_clawdbot_security_cli() {
+  command -v clawdbot >/dev/null 2>&1 || return 1
+  clawdbot security --help >/dev/null 2>&1
+}
+
+mktemp_file() {
+  local tmp=""
+
+  tmp="$(mktemp 2>/dev/null || true)"
+  if [[ -z "$tmp" ]]; then
+    tmp="$(mktemp -t acip.XXXXXX 2>/dev/null || true)"
+  fi
+  if [[ -z "$tmp" ]]; then
+    tmp="$(mktemp "/tmp/acip.XXXXXX" 2>/dev/null || true)"
+  fi
+
+  if [[ -z "$tmp" ]]; then
+    log_error "mktemp failed"
+    exit 1
+  fi
+
+  echo "$tmp"
 }
 
 check_requirements() {
