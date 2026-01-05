@@ -29,7 +29,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install tiktoken
-        run: pip install tiktoken
+        run: python -m pip install tiktoken
 
       - name: Generate checksums and manifest
         run: |
@@ -38,11 +38,11 @@ jobs:
 
           # Helper function to count tokens using tiktoken
           count_tokens() {
-            python3 -c "
+            python -c "
           import tiktoken
           import sys
           enc = tiktoken.get_encoding('cl100k_base')
-          with open(sys.argv[1], 'r') as f:
+          with open(sys.argv[1], 'r', encoding='utf-8') as f:
               text = f.read()
           print(len(enc.encode(text)))
           " "$1"
