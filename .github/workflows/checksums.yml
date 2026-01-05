@@ -7,6 +7,7 @@ on:
       - 'ACIP_*.md'
       - 'integrations/**'
       - 'README.md'
+      - '.github/workflows/checksums.yml'
   release:
     types: [published]
   workflow_dispatch:
