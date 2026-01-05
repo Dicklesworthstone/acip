@@ -151,7 +151,7 @@ To update to the latest version:
 cp ~/clawd/SECURITY.md ~/clawd/SECURITY.md.backup
 
 # Download latest
-curl -sL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/SECURITY.md \
+curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/SECURITY.md \
   -o ~/clawd/SECURITY.md
 
 # Verify checksum (recommended)
