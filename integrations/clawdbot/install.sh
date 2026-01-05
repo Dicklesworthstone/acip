@@ -19,9 +19,12 @@
 #   ACIP_STATUS=1               - Show install/activation status (no changes)
 #   ACIP_SELFTEST=1             - Run an interactive canary prompt-injection self-test after install
 #   ACIP_UNINSTALL=1            - Remove SECURITY.md instead of installing
+#   ACIP_PURGE=1                - (Uninstall) Also delete SECURITY.local.md (and don't keep SECURITY.md backups)
 #   ACIP_ALLOW_UNVERIFIED=1     - Allow install if checksum manifest can't be fetched (NOT recommended)
 #   ACIP_INJECT=1               - (Optional) Inject ACIP into SOUL.md/AGENTS.md so it's active even if your Clawdbot version doesn't load SECURITY.md automatically
+#   ACIP_REQUIRE_ACTIVE=1       - Fail if activation can't be confirmed (forces injection when needed)
 #   ACIP_INJECT_FILE=SOUL.md    - Injection target (SOUL.md or AGENTS.md; default: SOUL.md)
+#   ACIP_EDIT_LOCAL=1           - Open SECURITY.local.md in $EDITOR after install
 #
 # Examples:
 #   # Standard install
@@ -36,6 +39,10 @@
 #   ACIP_STATUS=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
 #     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
 #
+#   # Install + edit local rules
+#   ACIP_EDIT_LOCAL=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
+#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+#
 #   # Custom workspace, non-interactive
 #   CLAWD_WORKSPACE=~/assistant ACIP_NONINTERACTIVE=1 ACIP_INJECT=1 \
 #     curl -fsSL -H "Accept: application/vnd.github.raw" \
@@ -45,6 +52,10 @@
 #   ACIP_UNINSTALL=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
 #     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
 #
+#   # Purge (uninstall + delete local rules file too)
+#   ACIP_UNINSTALL=1 ACIP_PURGE=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
+#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+#
 
 set -euo pipefail
 
@@ -52,7 +63,7 @@ set -euo pipefail
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-readonly SCRIPT_VERSION="1.1.7"
+readonly SCRIPT_VERSION="1.1.8"
 readonly ACIP_REPO="Dicklesworthstone/acip"
 readonly ACIP_BRANCH="main"
 readonly SECURITY_FILE="integrations/clawdbot/SECURITY.md"
@@ -61,6 +72,10 @@ readonly CANARY_BASENAME="ACIP_CANARY_DO_NOT_SHARE.txt"
 readonly INSTALLER_API_URL="https://api.github.com/repos/${ACIP_REPO}/contents/integrations/clawdbot/install.sh?ref=${ACIP_BRANCH}"
 readonly BASE_URL="https://raw.githubusercontent.com/${ACIP_REPO}/${ACIP_BRANCH}"
 readonly MANIFEST_URL="${BASE_URL}/.checksums/manifest.json"
+readonly MANIFEST_SIG_PATH=".checksums/manifest.json.sig"
+readonly MANIFEST_CERT_PATH=".checksums/manifest.json.pem"
+readonly COSIGN_OIDC_ISSUER="https://token.actions.githubusercontent.com"
+readonly COSIGN_CERT_IDENTITY="https://github.com/${ACIP_REPO}/.github/workflows/checksums.yml@refs/heads/${ACIP_BRANCH}"
 readonly SECURITY_URL="${BASE_URL}/${SECURITY_FILE}"
 readonly INJECT_BEGIN="<!-- ACIP:BEGIN clawdbot SECURITY.md -->"
 readonly INJECT_END="<!-- ACIP:END clawdbot SECURITY.md -->"
@@ -73,9 +88,12 @@ QUIET="${ACIP_QUIET:-0}"
 STATUS="${ACIP_STATUS:-0}"
 SELFTEST="${ACIP_SELFTEST:-0}"
 UNINSTALL="${ACIP_UNINSTALL:-0}"
+PURGE="${ACIP_PURGE:-0}"
 ALLOW_UNVERIFIED="${ACIP_ALLOW_UNVERIFIED:-0}"
 INJECT="${ACIP_INJECT:-0}"
+REQUIRE_ACTIVE="${ACIP_REQUIRE_ACTIVE:-0}"
 INJECT_FILE="${ACIP_INJECT_FILE:-SOUL.md}"
+EDIT_LOCAL="${ACIP_EDIT_LOCAL:-0}"
 
 # Workspace is resolved at runtime (may be inferred from clawdbot.json)
 WORKSPACE=""
@@ -384,12 +402,37 @@ fetch_manifest() {
   return 1
 }
 
+python_cmd() {
+  if command -v python3 >/dev/null 2>&1; then
+    echo "python3"
+    return 0
+  fi
+  if command -v python >/dev/null 2>&1; then
+    echo "python"
+    return 0
+  fi
+  return 1
+}
+
 extract_manifest_commit() {
   local manifest="$1"
-  local commit
-  commit=$(echo "$manifest" | \
-    grep -m 1 -E '^[[:space:]]*"commit"[[:space:]]*:' | \
-    sed 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+  [[ -n "$manifest" ]] || return 1
+
+  local commit=""
+  local py=""
+
+  if py="$(python_cmd)"; then
+    commit="$(printf '%s' "$manifest" | "$py" -c 'import sys,json; m=json.load(sys.stdin); c=m.get("commit",""); print(c if isinstance(c,str) else "")' 2>/dev/null || true)"
+  fi
+
+  commit="$(printf '%s' "$commit" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+
+  if [[ -z "$commit" ]]; then
+    commit="$(echo "$manifest" | \
+      grep -m 1 -E '^[[:space:]]*"commit"[[:space:]]*:' | \
+      sed 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
+    commit="$(printf '%s' "$commit" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  fi
 
   if [[ -z "$commit" || ${#commit} -lt 7 ]]; then
     return 1
@@ -406,18 +449,83 @@ fetch_expected_checksum() {
 
   # Extract checksum for clawdbot SECURITY.md from integrations array
   # Using grep/sed for portability (no jq requirement)
-  local checksum
-  checksum=$(echo "$manifest" | \
-    grep -A10 "\"file\": \"${SECURITY_FILE}\"" | \
-    grep '"sha256"' | \
-    head -1 | \
-    sed 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([a-f0-9]*\)".*/\1/')
+  local checksum=""
+  local py=""
+
+  if py="$(python_cmd)"; then
+    checksum="$(printf '%s' "$manifest" | "$py" -c 'import sys,json; m=json.load(sys.stdin); target=sys.argv[1]; items=m.get("integrations") or []; out=next((e.get("sha256","") for e in items if isinstance(e,dict) and e.get("file")==target), ""); print(out if isinstance(out,str) else "")' "$SECURITY_FILE" 2>/dev/null || true)"
+  fi
+
+  checksum="$(printf '%s' "$checksum" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+
+  if [[ -z "$checksum" ]]; then
+    checksum="$(echo "$manifest" | \
+      grep -A10 "\"file\": \"${SECURITY_FILE}\"" | \
+      grep '"sha256"' | \
+      head -1 | \
+      sed 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([a-f0-9]*\)".*/\1/')"
+    checksum="$(printf '%s' "$checksum" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  fi
 
   if [[ -z "$checksum" || ${#checksum} -ne 64 ]]; then
     return 1
   fi
 
   echo "$checksum"
+}
+
+fetch_manifest_signing_material() {
+  local sig_out="$1"
+  local cert_out="$2"
+
+  local ua="acip-clawdbot-installer/${SCRIPT_VERSION}"
+  local auth=()
+  local gh_token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+  if [[ -n "$gh_token" ]]; then
+    auth=(-H "Authorization: Bearer ${gh_token}")
+  fi
+
+  local sig_url="https://api.github.com/repos/${ACIP_REPO}/contents/${MANIFEST_SIG_PATH}?ref=${ACIP_BRANCH}"
+  local cert_url="https://api.github.com/repos/${ACIP_REPO}/contents/${MANIFEST_CERT_PATH}?ref=${ACIP_BRANCH}"
+
+  if ! curl -fsSL --max-time 10 \
+    -H "Accept: application/vnd.github.raw" \
+    -H "User-Agent: ${ua}" \
+    "${auth[@]}" \
+    "$sig_url" -o "$sig_out" 2>/dev/null; then
+    return 1
+  fi
+
+  if ! curl -fsSL --max-time 10 \
+    -H "Accept: application/vnd.github.raw" \
+    -H "User-Agent: ${ua}" \
+    "${auth[@]}" \
+    "$cert_url" -o "$cert_out" 2>/dev/null; then
+    return 1
+  fi
+
+  [[ -s "$sig_out" && -s "$cert_out" ]]
+}
+
+manifest_signature_status() {
+  local manifest_file="$1"
+  local sig_file="$2"
+  local cert_file="$3"
+
+  if [[ ! -s "$sig_file" || ! -s "$cert_file" ]]; then
+    return 2 # unsigned
+  fi
+
+  if ! command -v cosign >/dev/null 2>&1; then
+    return 3 # signed, but cannot verify
+  fi
+
+  cosign verify-blob \
+    --certificate "$cert_file" \
+    --signature "$sig_file" \
+    --certificate-identity "$COSIGN_CERT_IDENTITY" \
+    --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" \
+    "$manifest_file" >/dev/null 2>&1
 }
 
 security_url_for_ref() {
@@ -523,6 +631,38 @@ EOF
 
   chmod 600 "$LOCAL_RULES_FILE" 2>/dev/null || true
   log_success "Created: ${DIM}${LOCAL_RULES_FILE}${RESET}"
+}
+
+edit_local_rules_file() {
+  if [[ "$EDIT_LOCAL" != "1" ]]; then
+    return 0
+  fi
+
+  if [[ "$NONINTERACTIVE" == "1" ]] || ! prompt_available; then
+    log_warn "ACIP_EDIT_LOCAL=1 requested but no interactive TTY is available"
+    return 0
+  fi
+
+  local editor_str="${EDITOR:-}"
+  local -a editor_argv=()
+
+  if [[ -n "$editor_str" ]]; then
+    # Supports simple values like "vim" or "code -w"
+    read -r -a editor_argv <<<"$editor_str"
+  elif command -v nano >/dev/null 2>&1; then
+    editor_argv=(nano)
+  elif command -v vi >/dev/null 2>&1; then
+    editor_argv=(vi)
+  else
+    log_warn "No editor found (set \$EDITOR to edit ${LOCAL_RULES_BASENAME})"
+    return 0
+  fi
+
+  log_step "Opening ${LOCAL_RULES_BASENAME} in ${editor_argv[*]}..."
+  "${editor_argv[@]}" "$LOCAL_RULES_FILE" </dev/tty >/dev/tty 2>&1 || {
+    log_warn "Editor exited with a non-zero status"
+    return 0
+  }
 }
 
 build_injection_source() {
@@ -771,9 +911,47 @@ install() {
   local manifest=""
   local manifest_commit=""
   local expected_checksum=""
+  local manifest_file=""
 
   log_step "Fetching checksum manifest..."
   if manifest=$(fetch_manifest); then
+    manifest_file="$(tmpfile)"
+    printf '%s' "$manifest" > "$manifest_file"
+
+    local sig_file
+    local cert_file
+    sig_file="$(tmpfile)"
+    cert_file="$(tmpfile)"
+
+    if fetch_manifest_signing_material "$sig_file" "$cert_file"; then
+      if command -v cosign >/dev/null 2>&1; then
+        log_step "Verifying manifest signature (cosign)..."
+      else
+        log_info "Manifest signature present (install cosign to verify)"
+      fi
+
+      local sig_rc=0
+      manifest_signature_status "$manifest_file" "$sig_file" "$cert_file" || sig_rc=$?
+      if [[ "$sig_rc" == "0" ]]; then
+        log_success "Manifest signature verified"
+      elif [[ "$sig_rc" == "3" ]]; then
+        :
+      else
+        log_error "Manifest signature verification failed"
+        if [[ "$ALLOW_UNVERIFIED" == "1" ]]; then
+          log_warn "Continuing because ACIP_ALLOW_UNVERIFIED=1"
+        else
+          echo ""
+          echo "  Refusing to proceed with an untrusted checksum manifest."
+          echo "  To override (NOT recommended):"
+          echo "    ACIP_ALLOW_UNVERIFIED=1 curl -fsSL -H \"Accept: application/vnd.github.raw\" \"${INSTALLER_API_URL}\" | bash"
+          exit 1
+        fi
+      fi
+    else
+      log_info "Manifest is unsigned (no ${MANIFEST_SIG_PATH} found)"
+    fi
+
     if manifest_commit=$(extract_manifest_commit "$manifest"); then
       log_step "Fetching expected checksum from manifest..."
       if ! expected_checksum=$(fetch_expected_checksum "$manifest"); then
@@ -811,6 +989,7 @@ install() {
   fi
 
   ensure_local_rules_file
+  edit_local_rules_file
 
   local activated="0"
   local inject_target=""
@@ -836,11 +1015,18 @@ install() {
     else
       inject_target="$(resolve_inject_target)"
 
-      if [[ "$INJECT" == "1" ]]; then
+      if [[ "$INJECT" == "1" || "$REQUIRE_ACTIVE" == "1" ]]; then
+        if [[ "$REQUIRE_ACTIVE" == "1" && "$INJECT" != "1" ]]; then
+          log_info "ACIP_REQUIRE_ACTIVE=1 enabled; attempting activation via injection"
+        fi
+
         if ensure_inject_target_exists "$inject_target"; then
           backup_file "$inject_target" "backup"
           inject_security_into_file "$inject_target"
           activated="1"
+        elif [[ "$REQUIRE_ACTIVE" == "1" ]]; then
+          log_error "Activation required but injection target could not be created"
+          exit 1
         fi
       elif [[ "$NONINTERACTIVE" == "1" ]]; then
         log_warn "Your Clawdbot version may not load SECURITY.md automatically; ACIP may not be active yet"
@@ -859,6 +1045,17 @@ install() {
         fi
       fi
     fi
+  fi
+
+  if [[ "$REQUIRE_ACTIVE" == "1" && "$activated" != "1" ]]; then
+    log_error "ACIP_REQUIRE_ACTIVE=1 enabled but activation could not be confirmed"
+    echo ""
+    echo "  Fixes to try:"
+    echo "    1) Re-run with: ACIP_INJECT=1"
+    echo "    2) Ensure SOUL.md/AGENTS.md exists in the workspace"
+    echo "    3) Restart Clawdbot"
+    echo ""
+    exit 1
   fi
 
   # Summary
@@ -933,9 +1130,35 @@ status() {
   local manifest=""
   local manifest_commit=""
   local expected_checksum=""
+  local manifest_sig="unavailable"
 
   log_step "Fetching checksum manifest..."
   if manifest=$(fetch_manifest); then
+    local manifest_file
+    local sig_file
+    local cert_file
+    manifest_file="$(tmpfile)"
+    sig_file="$(tmpfile)"
+    cert_file="$(tmpfile)"
+    printf '%s' "$manifest" > "$manifest_file"
+
+    if fetch_manifest_signing_material "$sig_file" "$cert_file"; then
+      local sig_rc=0
+      manifest_signature_status "$manifest_file" "$sig_file" "$cert_file" || sig_rc=$?
+      if [[ "$sig_rc" == "0" ]]; then
+        manifest_sig="verified"
+        log_success "Manifest signature verified"
+      elif [[ "$sig_rc" == "3" ]]; then
+        manifest_sig="signed (cosign not installed)"
+        log_info "Manifest signature present (install cosign to verify)"
+      else
+        manifest_sig="invalid"
+        log_warn "Manifest signature verification failed"
+      fi
+    else
+      manifest_sig="unsigned"
+    fi
+
     if manifest_commit=$(extract_manifest_commit "$manifest"); then
       if expected_checksum=$(fetch_expected_checksum "$manifest"); then
         :
@@ -992,6 +1215,7 @@ status() {
   echo "    Workspace: ${WORKSPACE}"
   echo "    Installed: $([[ "$installed" == "1" ]] && echo yes || echo no)"
   echo "    Local rules: $([[ "$local_rules" == "1" ]] && echo yes || echo no)"
+  echo "    Manifest:  ${manifest_sig}"
   if [[ "$installed" == "1" ]]; then
     if [[ "$verified" == "1" ]]; then
       echo "    Verified:  yes"
@@ -1211,7 +1435,12 @@ uninstall() {
     fi
   done
 
-  if [[ ! -f "$TARGET_FILE" ]]; then
+  local has_security="0"
+  local has_local="0"
+  [[ -f "$TARGET_FILE" ]] && has_security="1"
+  [[ -f "$LOCAL_RULES_FILE" ]] && has_local="1"
+
+  if [[ "$has_security" != "1" && ! ( "$PURGE" == "1" && "$has_local" == "1" ) ]]; then
     log_warn "SECURITY.md not found at ${TARGET_FILE}"
     echo "  Nothing to uninstall."
     if [[ "$injected" == "1" ]]; then
@@ -1229,22 +1458,49 @@ uninstall() {
       echo "  Re-run with: ACIP_NONINTERACTIVE=1"
       exit 1
     fi
-    if ! prompt_yn "Remove ${TARGET_FILE}?" "N"; then
-      log_error "Aborted by user"
+
+    if [[ "$PURGE" == "1" ]]; then
+      if ! prompt_yn "Permanently delete SECURITY.md and ${LOCAL_RULES_BASENAME} from this workspace?" "N"; then
+        log_error "Aborted by user"
+        exit 1
+      fi
+    else
+      if ! prompt_yn "Remove ${TARGET_FILE}?" "N"; then
+        log_error "Aborted by user"
+        exit 1
+      fi
+    fi
+  else
+    if [[ "$PURGE" == "1" && "$FORCE" != "1" ]]; then
+      log_error "Refusing to purge in non-interactive mode without ACIP_FORCE=1"
+      echo "  Re-run with: ACIP_FORCE=1 ACIP_UNINSTALL=1 ACIP_PURGE=1"
       exit 1
     fi
   fi
 
-  # Create backup before removing
-  local backup_file
-  backup_file="${TARGET_FILE}.uninstalled.$(date +%Y%m%d_%H%M%S)"
-  mv "$TARGET_FILE" "$backup_file"
+  if [[ "$PURGE" == "1" ]]; then
+    if [[ -f "$TARGET_FILE" ]]; then
+      rm -f "$TARGET_FILE"
+      log_success "Deleted: ${TARGET_FILE}"
+    fi
+    if [[ -f "$LOCAL_RULES_FILE" ]]; then
+      rm -f "$LOCAL_RULES_FILE"
+      log_success "Deleted: ${LOCAL_RULES_FILE}"
+    fi
+    log_success "Purged ACIP security files from workspace"
+  else
+    # Create backup before removing SECURITY.md
+    local backup_file
+    backup_file="${TARGET_FILE}.uninstalled.$(date +%Y%m%d_%H%M%S)"
+    mv "$TARGET_FILE" "$backup_file"
 
-  log_success "Uninstalled ACIP security layer"
-  log_info "Backup saved: ${backup_file}"
-  if [[ -f "$LOCAL_RULES_FILE" ]]; then
-    log_info "Keeping ${LOCAL_RULES_BASENAME}: ${LOCAL_RULES_FILE}"
+    log_success "Uninstalled ACIP security layer"
+    log_info "Backup saved: ${backup_file}"
+    if [[ -f "$LOCAL_RULES_FILE" ]]; then
+      log_info "Keeping ${LOCAL_RULES_BASENAME}: ${LOCAL_RULES_FILE}"
+    fi
   fi
+
   echo ""
   echo "  Restart Clawdbot to apply changes."
   echo ""
@@ -1270,17 +1526,30 @@ Environment Variables:
   ACIP_STATUS             Show install/activation status (no changes)
   ACIP_SELFTEST           Run interactive canary self-test after install
   ACIP_UNINSTALL          Remove SECURITY.md instead of installing
+  ACIP_PURGE              (Uninstall) Also delete SECURITY.local.md and skip backups
   ACIP_ALLOW_UNVERIFIED   Allow install if manifest can't be fetched (NOT recommended)
   ACIP_INJECT             Inject ACIP into SOUL.md/AGENTS.md so it's active today
+  ACIP_REQUIRE_ACTIVE     Fail if activation can't be confirmed (forces injection when needed)
   ACIP_INJECT_FILE        Injection target (SOUL.md or AGENTS.md; default: SOUL.md)
+  ACIP_EDIT_LOCAL         Open SECURITY.local.md in $EDITOR after install
 
 Examples:
   # Standard install
   curl -fsSL -H "Accept: application/vnd.github.raw" \\
     "${INSTALLER_API_URL}" | bash
 
+  # Recommended: install + activate + self-test
+  ACIP_INJECT=1 ACIP_SELFTEST=1 \\
+    curl -fsSL -H "Accept: application/vnd.github.raw" \\
+      "${INSTALLER_API_URL}" | bash
+
   # Status / verify
   ACIP_STATUS=1 \\
+    curl -fsSL -H "Accept: application/vnd.github.raw" \\
+      "${INSTALLER_API_URL}" | bash
+
+  # Edit local rules
+  ACIP_EDIT_LOCAL=1 \\
     curl -fsSL -H "Accept: application/vnd.github.raw" \\
       "${INSTALLER_API_URL}" | bash
 
@@ -1296,6 +1565,11 @@ Examples:
 
   # Uninstall
   ACIP_UNINSTALL=1 \\
+    curl -fsSL -H "Accept: application/vnd.github.raw" \\
+      "${INSTALLER_API_URL}" | bash
+
+  # Purge (also deletes SECURITY.local.md)
+  ACIP_UNINSTALL=1 ACIP_PURGE=1 \\
     curl -fsSL -H "Accept: application/vnd.github.raw" \\
       "${INSTALLER_API_URL}" | bash
 

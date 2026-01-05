@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   generate-checksums:
@@ -31,6 +32,9 @@ jobs:
 
       - name: Install tiktoken
         run: python -m pip install tiktoken
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
 
       - name: Generate checksums and manifest
         run: |
@@ -190,6 +194,13 @@ jobs:
 
           # Also create a combined checksums file
           cat .checksums/*.sha256 > .checksums/SHA256SUMS 2>/dev/null || true
+
+      - name: Sign manifest (keyless)
+        run: |
+          cosign sign-blob --yes \
+            --output-signature .checksums/manifest.json.sig \
+            --output-certificate .checksums/manifest.json.pem \
+            .checksums/manifest.json
 
       - name: Commit checksums
         run: |

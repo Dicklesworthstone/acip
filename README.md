@@ -671,6 +671,12 @@ curl -fsSL -H "Accept: application/vnd.github.raw" \
 ```
 The installer verifies checksums and can optionally inject ACIP into `SOUL.md`/`AGENTS.md` so it’s active immediately.
 
+**Recommended (Install + Activate + Self-Test):**
+```bash
+ACIP_INJECT=1 ACIP_SELFTEST=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
+  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+```
+
 **Status / Verify (No Changes):**
 ```bash
 ACIP_STATUS=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
