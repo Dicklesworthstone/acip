@@ -72,15 +72,13 @@ ACIP provides a cognitive security layer that helps Clawd recognize and resist t
 ### Option 2: Automated Script
 
 ```bash
-curl -fsSL -H "Accept: application/vnd.github.raw" \
-  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 ```
 
 Recommended (install + activate + self-test):
 
 ```bash
-ACIP_INJECT=1 ACIP_SELFTEST=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
-  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+ACIP_INJECT=1 ACIP_SELFTEST=1 curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 ```
 
 This script:
@@ -95,22 +93,19 @@ If your Clawdbot version doesn’t load `SECURITY.md` automatically, the install
 Install + activate immediately:
 
 ```bash
-ACIP_INJECT=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
-  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+ACIP_INJECT=1 curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 ```
 
 Edit your local rules after install:
 
 ```bash
-ACIP_EDIT_LOCAL=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
-  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+ACIP_EDIT_LOCAL=1 curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 ```
 
 Status / verify (no changes):
 
 ```bash
-ACIP_STATUS=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
-  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+ACIP_STATUS=1 curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 ```
 
 Tip: if you hit GitHub API rate limits, set `GITHUB_TOKEN` (or `GH_TOKEN`) before running the installer.
@@ -197,8 +192,7 @@ grep -n "ACIP:BEGIN clawdbot SECURITY.md" ~/clawd/AGENTS.md 2>/dev/null || true
 Self-test (optional, interactive):
 
 ```bash
-ACIP_SELFTEST=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
-  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+ACIP_SELFTEST=1 curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 ```
 
 ## Expected Behavior
@@ -233,7 +227,7 @@ Recommended (keeps `SECURITY.local.md` and refreshes any existing injection bloc
 
 ```bash
 curl -fsSL -H "Accept: application/vnd.github.raw" \
-  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 ```
 
 Manual update (verify after download):
@@ -265,15 +259,13 @@ If you installed by pasting into `SOUL.md`/`AGENTS.md`, remove that section inst
 Uninstall via installer:
 
 ```bash
-ACIP_UNINSTALL=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
-  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+ACIP_UNINSTALL=1 curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 ```
 
 Purge (also deletes `SECURITY.local.md` and skips keeping `SECURITY.md` backups):
 
 ```bash
-ACIP_UNINSTALL=1 ACIP_PURGE=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
-  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+ACIP_UNINSTALL=1 ACIP_PURGE=1 curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 ```
 
 ## Compatibility

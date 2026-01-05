@@ -9,7 +9,7 @@
 #
 # Usage:
 #   curl -fsSL -H "Accept: application/vnd.github.raw" \
-#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 #
 # Options (via environment variables):
 #   CLAWD_WORKSPACE=~/my-clawd  - Custom workspace directory (default: auto-detect from clawdbot.json, else ~/clawd)
@@ -29,32 +29,32 @@
 # Examples:
 #   # Standard install
 #   curl -fsSL -H "Accept: application/vnd.github.raw" \
-#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 #
 #   # Install + activate immediately (inject into SOUL.md/AGENTS.md)
 #   ACIP_INJECT=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
-#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 #
 #   # Status / verify
 #   ACIP_STATUS=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
-#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 #
 #   # Install + edit local rules
 #   ACIP_EDIT_LOCAL=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
-#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 #
 #   # Custom workspace, non-interactive
 #   CLAWD_WORKSPACE=~/assistant ACIP_NONINTERACTIVE=1 ACIP_INJECT=1 \
 #     curl -fsSL -H "Accept: application/vnd.github.raw" \
-#       "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+#       "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 #
 #   # Uninstall
 #   ACIP_UNINSTALL=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
-#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 #
 #   # Purge (uninstall + delete local rules file too)
 #   ACIP_UNINSTALL=1 ACIP_PURGE=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
-#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+#     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 #
 
 set -euo pipefail
@@ -63,7 +63,7 @@ set -euo pipefail
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-readonly SCRIPT_VERSION="1.1.13"
+readonly SCRIPT_VERSION="1.1.16"
 readonly ACIP_REPO="Dicklesworthstone/acip"
 readonly ACIP_BRANCH="main"
 readonly SECURITY_FILE="integrations/clawdbot/SECURITY.md"
@@ -476,13 +476,13 @@ fetch_expected_checksum() {
 
   if [[ -z "$checksum" ]]; then
     if [[ -f "$manifest_input" ]]; then
-      checksum="$(grep -A10 "\"file\": \"${SECURITY_FILE}\"" "$manifest_input" | \
+      checksum="$(grep -F -A10 "\"file\": \"${SECURITY_FILE}\"" "$manifest_input" | \
         grep '"sha256"' | \
         head -1 | \
         sed 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([a-f0-9]*\)".*/\1/' || true)"
     else
       checksum="$(printf '%s' "$manifest_input" | \
-        grep -A10 "\"file\": \"${SECURITY_FILE}\"" | \
+        grep -F -A10 "\"file\": \"${SECURITY_FILE}\"" | \
         grep '"sha256"' | \
         head -1 | \
         sed 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([a-f0-9]*\)".*/\1/' || true)"
@@ -662,7 +662,7 @@ backup_existing() {
   fi
 
   local backup_file
-  backup_file="${TARGET_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
+  backup_file="${TARGET_FILE}.backup.$(date +%Y%m%d_%H%M%S).$$"
 
   log_step "Backing up existing SECURITY.md..."
   cp "$TARGET_FILE" "$backup_file"
@@ -775,7 +775,7 @@ resolve_inject_target() {
 
 file_has_injection() {
   local file="$1"
-  grep -Fq "$INJECT_BEGIN" "$file" 2>/dev/null && grep -Fq "$INJECT_END" "$file" 2>/dev/null
+  grep -Fxq "$INJECT_BEGIN" "$file" 2>/dev/null && grep -Fxq "$INJECT_END" "$file" 2>/dev/null
 }
 
 ensure_inject_target_exists() {
@@ -794,7 +794,8 @@ ensure_inject_target_exists() {
   fi
 
   if prompt_yn "Create ${file} so ACIP can be activated now?" "Y"; then
-    printf '%s\n' "# ${INJECT_FILE} - Clawdbot system instructions" > "$file"
+    local base="${file##*/}"
+    printf '%s\n' "# ${base} - Clawdbot system instructions" > "$file"
     printf '%s\n' "" >> "$file"
     chmod 600 "$file" 2>/dev/null || true
     log_success "Created: ${file}"
@@ -816,7 +817,7 @@ backup_file() {
   fi
 
   local backup_path
-  backup_path="${file}.${label}.$(date +%Y%m%d_%H%M%S)"
+  backup_path="${file}.${label}.$(date +%Y%m%d_%H%M%S).$$"
   cp "$file" "$backup_path"
   log_info "Backup saved: ${backup_path}"
 }
@@ -833,6 +834,13 @@ file_mode() {
 
 inject_security_into_file() {
   local target="$1"
+  local backup_label="${2:-backup}"
+
+  [[ -f "$target" ]] || {
+    log_error "Injection target missing: ${target}"
+    return 1
+  }
+
   local original_mode=""
   if [[ -e "$target" ]]; then
     original_mode="$(file_mode "$target" 2>/dev/null || true)"
@@ -861,8 +869,20 @@ inject_security_into_file() {
     {
       printf '\n%s\n' "$INJECT_BEGIN"
       cat "$src_file"
-      printf '\n%s\n' "$INJECT_END"
+      printf '%s\n' "$INJECT_END"
     } >> "$tmp"
+  fi
+
+  if cmp -s "$target" "$tmp" 2>/dev/null; then
+    log_info "ACIP injection already up to date: ${target}"
+    return 0
+  fi
+
+  local base="${target##*/}"
+  if [[ "$(wc -l < "$target" | tr -d '[:space:]')" -le 3 ]] && grep -Fxq "# ${base} - Clawdbot system instructions" "$target" 2>/dev/null; then
+    :
+  else
+    backup_file "$target" "$backup_label"
   fi
 
   mv "$tmp" "$target"
@@ -904,11 +924,14 @@ remove_security_injection_from_file() {
 
 download_security_file() {
   local ref="$1"
+  local out_file="${2:-}"
 
   log_step "Downloading SECURITY.md..."
 
-  local tmp_file
-  tmp_file="$(tmpfile)"
+  if [[ -z "$out_file" ]]; then
+    log_error "Internal error: missing download output path"
+    exit 1
+  fi
 
   local url="$SECURITY_URL"
   local api_url="https://api.github.com/repos/${ACIP_REPO}/contents/${SECURITY_FILE}?ref=${ACIP_BRANCH}"
@@ -924,13 +947,13 @@ download_security_file() {
     auth=(-H "Authorization: Bearer ${gh_token}")
   fi
 
-  if ! curl -fsSL --show-error --max-time 30 "$url" -o "$tmp_file"; then
+  if ! curl -fsSL --show-error --max-time 30 "$url" -o "$out_file"; then
     # Fallback to GitHub Contents API (some networks block raw.githubusercontent.com)
     if ! curl -fsSL --show-error --max-time 30 \
       -H "Accept: application/vnd.github.raw" \
       -H "User-Agent: ${ua}" \
       "${auth[@]}" \
-      "$api_url" -o "$tmp_file"; then
+      "$api_url" -o "$out_file"; then
       log_error "Failed to download SECURITY.md"
       echo ""
       echo "  URL (raw): ${url}"
@@ -942,7 +965,7 @@ download_security_file() {
 
   # Validate file is not empty or error page
   local lines
-  lines=$(wc -l < "$tmp_file" | tr -d '[:space:]')
+  lines=$(wc -l < "$out_file" | tr -d '[:space:]')
 
   if [[ "$lines" -lt 50 ]]; then
     log_error "Downloaded file seems corrupted (only ${lines} lines)"
@@ -950,14 +973,12 @@ download_security_file() {
   fi
 
   # Check for expected content
-  if ! grep -q "Cognitive Integrity Framework" "$tmp_file" 2>/dev/null; then
+  if ! grep -q "Cognitive Integrity Framework" "$out_file" 2>/dev/null; then
     log_error "Downloaded file doesn't appear to be valid ACIP content"
     exit 1
   fi
 
-  # Move to final location
-  mv "$tmp_file" "$TARGET_FILE"
-  chmod 644 "$TARGET_FILE" 2>/dev/null || true
+  chmod 644 "$out_file" 2>/dev/null || true
 
   log_success "Downloaded successfully"
 }
@@ -970,7 +991,6 @@ install() {
   print_banner
   check_requirements
   ensure_workspace
-  backup_existing
 
   # Attempt to fetch manifest + pin download to the manifest commit to avoid TOCTOU issues.
   local manifest_commit=""
@@ -1007,7 +1027,7 @@ install() {
           echo ""
           echo "  Refusing to proceed with an untrusted checksum manifest."
           echo "  To override (NOT recommended):"
-          echo "    ACIP_ALLOW_UNVERIFIED=1 curl -fsSL -H \"Accept: application/vnd.github.raw\" \"${INSTALLER_API_URL}\" | bash"
+          echo "    ACIP_ALLOW_UNVERIFIED=1 curl -fsSL -H \"Accept: application/vnd.github.raw\" \"${INSTALLER_API_URL}&ts=\$(date +%s)\" | bash"
           exit 1
         fi
       fi
@@ -1022,7 +1042,7 @@ install() {
           echo "  Check your network (or set GITHUB_TOKEN), then try again."
           echo ""
           echo "  To override (NOT recommended):"
-          echo "    ACIP_ALLOW_UNVERIFIED=1 curl -fsSL -H \"Accept: application/vnd.github.raw\" \"${INSTALLER_API_URL}\" | bash"
+          echo "    ACIP_ALLOW_UNVERIFIED=1 curl -fsSL -H \"Accept: application/vnd.github.raw\" \"${INSTALLER_API_URL}&ts=\$(date +%s)\" | bash"
           exit 1
         fi
       else
@@ -1039,20 +1059,49 @@ install() {
   fi
 
   if [[ -n "${manifest_commit:-}" && ${#expected_checksum} -eq 64 ]]; then
-    log_info "Using pinned ACIP commit: ${manifest_commit}"
-    download_security_file "$manifest_commit"
-    if ! verify_checksum "$TARGET_FILE" "$expected_checksum"; then
-      log_error "Checksum verification failed - removing downloaded file"
-      rm -f "$TARGET_FILE"
-      exit 1
+    # If the file already matches the official checksum, don't overwrite or spam backups.
+    if [[ "$FORCE" != "1" && -f "$TARGET_FILE" ]]; then
+      local current_checksum=""
+      current_checksum="$(sha256 "$TARGET_FILE" 2>/dev/null || true)"
+      if [[ "$current_checksum" == "$expected_checksum" ]]; then
+        log_success "SECURITY.md already up to date (checksum verified)"
+      else
+        log_info "Using pinned ACIP commit: ${manifest_commit}"
+        local dl
+        dl="$(tmpfile)"
+        download_security_file "$manifest_commit" "$dl"
+        if ! verify_checksum "$dl" "$expected_checksum"; then
+          log_error "Checksum verification failed - removing downloaded file"
+          rm -f "$dl"
+          exit 1
+        fi
+        backup_existing
+        mv "$dl" "$TARGET_FILE"
+      fi
+    else
+      log_info "Using pinned ACIP commit: ${manifest_commit}"
+      local dl
+      dl="$(tmpfile)"
+      download_security_file "$manifest_commit" "$dl"
+      if ! verify_checksum "$dl" "$expected_checksum"; then
+        log_error "Checksum verification failed - removing downloaded file"
+        rm -f "$dl"
+        exit 1
+      fi
+      backup_existing
+      mv "$dl" "$TARGET_FILE"
     fi
   else
     if [[ "$ALLOW_UNVERIFIED" == "1" ]]; then
       log_warn "Manifest unavailable; downloading from ${ACIP_BRANCH} without verification"
       log_warn "This is NOT recommended; set ACIP_ALLOW_UNVERIFIED=0 to fail closed."
-      download_security_file ""
+      local dl
+      dl="$(tmpfile)"
+      download_security_file "" "$dl"
       local actual_checksum
-      actual_checksum=$(sha256 "$TARGET_FILE")
+      actual_checksum=$(sha256 "$dl")
+      backup_existing
+      mv "$dl" "$TARGET_FILE"
       log_info "Checksum (for manual verification): ${actual_checksum}"
     else
       log_error "Could not fetch/parse checksum manifest; refusing unverified install"
@@ -1061,7 +1110,7 @@ install() {
       echo "  Check your network and try again."
       echo ""
       echo "  To override (NOT recommended):"
-      echo "    ACIP_ALLOW_UNVERIFIED=1 curl -fsSL -H \"Accept: application/vnd.github.raw\" \"${INSTALLER_API_URL}\" | bash"
+      echo "    ACIP_ALLOW_UNVERIFIED=1 curl -fsSL -H \"Accept: application/vnd.github.raw\" \"${INSTALLER_API_URL}&ts=\$(date +%s)\" | bash"
       exit 1
     fi
   fi
@@ -1072,55 +1121,69 @@ install() {
   local activated="0"
   local inject_target=""
 
-  if has_clawdbot_security_cli; then
-    log_info "Detected Clawdbot security CLI; showing status"
-    CLAWD_WORKSPACE="$WORKSPACE" clawdbot security status 2>/dev/null || true
-    activated="1"
-  else
-    # If the user already has an injected ACIP block, keep it up to date automatically.
-    local existing_inject=0
-    local f=""
-    for f in "${WORKSPACE%/}/SOUL.md" "${WORKSPACE%/}/AGENTS.md"; do
-      if [[ -f "$f" ]] && file_has_injection "$f"; then
-        existing_inject=1
-        backup_file "$f" "backup"
-        inject_security_into_file "$f"
-      fi
-    done
+  # If the user already has an injected ACIP block, keep it up to date automatically.
+  local existing_inject=0
+  local f=""
+  for f in "${WORKSPACE%/}/SOUL.md" "${WORKSPACE%/}/AGENTS.md"; do
+    if [[ -f "$f" ]] && file_has_injection "$f"; then
+      existing_inject=1
+      inject_security_into_file "$f" "backup"
+    fi
+  done
 
-    if [[ "$existing_inject" == "1" ]]; then
+  if [[ "$existing_inject" == "1" ]]; then
+    activated="1"
+  fi
+
+  # If Clawdbot supports a security CLI, treat it as an activation signal only if the status command succeeds.
+  if has_clawdbot_security_cli; then
+    local cli_rc=0
+    if [[ "$QUIET" == "1" ]]; then
+      CLAWD_WORKSPACE="$WORKSPACE" clawdbot security status >/dev/null 2>&1 || cli_rc=$?
+    else
+      log_info "Detected Clawdbot security CLI; showing status"
+      CLAWD_WORKSPACE="$WORKSPACE" clawdbot security status 2>/dev/null || cli_rc=$?
+    fi
+    if [[ "$cli_rc" == "0" ]]; then
       activated="1"
     else
-      inject_target="$(resolve_inject_target)"
+      log_warn "Clawdbot security status returned non-zero; activation may not be enabled"
+    fi
+  fi
 
-      if [[ "$INJECT" == "1" || "$REQUIRE_ACTIVE" == "1" ]]; then
-        if [[ "$REQUIRE_ACTIVE" == "1" && "$INJECT" != "1" ]]; then
-          log_info "ACIP_REQUIRE_ACTIVE=1 enabled; attempting activation via injection"
-        fi
+  if [[ "$activated" != "1" ]]; then
+    inject_target="$(resolve_inject_target)"
+  fi
 
+  if [[ "$INJECT" == "1" || "$REQUIRE_ACTIVE" == "1" ]]; then
+    if [[ "$REQUIRE_ACTIVE" == "1" && "$INJECT" != "1" ]]; then
+      log_info "ACIP_REQUIRE_ACTIVE=1 enabled; attempting activation via injection"
+    fi
+
+    if [[ "$existing_inject" != "1" ]]; then
+      inject_target="${inject_target:-$(resolve_inject_target)}"
+      if ensure_inject_target_exists "$inject_target"; then
+        inject_security_into_file "$inject_target" "backup"
+        activated="1"
+      elif [[ "$REQUIRE_ACTIVE" == "1" ]]; then
+        log_error "Activation required but injection target could not be created"
+        exit 1
+      fi
+    fi
+  elif [[ "$activated" != "1" ]]; then
+    if [[ "$NONINTERACTIVE" == "1" ]]; then
+      log_warn "Your Clawdbot version may not load SECURITY.md automatically; ACIP may not be active yet"
+      log_info "To activate now: ACIP_INJECT=1 ${ARROW} inject into ${INJECT_FILE}"
+    else
+      echo ""
+      log_warn "Your Clawdbot version may not load SECURITY.md automatically"
+      if prompt_yn "Activate now by injecting ACIP into ${inject_target}?" "Y"; then
         if ensure_inject_target_exists "$inject_target"; then
-          backup_file "$inject_target" "backup"
-          inject_security_into_file "$inject_target"
+          inject_security_into_file "$inject_target" "backup"
           activated="1"
-        elif [[ "$REQUIRE_ACTIVE" == "1" ]]; then
-          log_error "Activation required but injection target could not be created"
-          exit 1
         fi
-      elif [[ "$NONINTERACTIVE" == "1" ]]; then
-        log_warn "Your Clawdbot version may not load SECURITY.md automatically; ACIP may not be active yet"
-        log_info "To activate now: ACIP_INJECT=1 ${ARROW} inject into ${INJECT_FILE}"
       else
-        echo ""
-        log_warn "Your Clawdbot version may not load SECURITY.md automatically"
-        if prompt_yn "Activate now by injecting ACIP into ${inject_target}?" "Y"; then
-          if ensure_inject_target_exists "$inject_target"; then
-            backup_file "$inject_target" "backup"
-            inject_security_into_file "$inject_target"
-            activated="1"
-          fi
-        else
-          log_warn "Installed SECURITY.md but did not activate it in Clawdbot prompts"
-        fi
+        log_warn "Installed SECURITY.md but did not activate it in Clawdbot prompts"
       fi
     fi
   fi
@@ -1279,9 +1342,18 @@ status() {
       echo "  - ${f}"
     done
   elif has_clawdbot_security_cli; then
-    activated="1"
     log_success "Detected Clawdbot security CLI"
-    CLAWD_WORKSPACE="$WORKSPACE" clawdbot security status 2>/dev/null || true
+    local cli_rc=0
+    if [[ "$QUIET" == "1" ]]; then
+      CLAWD_WORKSPACE="$WORKSPACE" clawdbot security status >/dev/null 2>&1 || cli_rc=$?
+    else
+      CLAWD_WORKSPACE="$WORKSPACE" clawdbot security status 2>/dev/null || cli_rc=$?
+    fi
+    if [[ "$cli_rc" == "0" ]]; then
+      activated="1"
+    else
+      log_warn "Clawdbot security status returned non-zero; activation unknown"
+    fi
   else
     log_warn "Activation unknown (no injection markers and no 'clawdbot security' CLI detected)"
   fi
@@ -1310,13 +1382,13 @@ status() {
 
   if [[ "$installed" != "1" ]]; then
     echo "  To install:"
-    echo "    curl -fsSL -H \"Accept: application/vnd.github.raw\" \"${INSTALLER_API_URL}\" | bash"
+    echo "    curl -fsSL -H \"Accept: application/vnd.github.raw\" \"${INSTALLER_API_URL}&ts=\$(date +%s)\" | bash"
     echo ""
   fi
 
   if [[ "$activated" != "1" ]]; then
     echo "  To activate now (recommended):"
-    echo "    ACIP_INJECT=1 curl -fsSL -H \"Accept: application/vnd.github.raw\" \"${INSTALLER_API_URL}\" | bash"
+    echo "    ACIP_INJECT=1 curl -fsSL -H \"Accept: application/vnd.github.raw\" \"${INSTALLER_API_URL}&ts=\$(date +%s)\" | bash"
     echo ""
   fi
 
@@ -1412,14 +1484,13 @@ selftest() {
     inject_target="$(resolve_inject_target)"
 
     echo ""
-    log_warn "Activation unknown (no injection markers and no 'clawdbot security' CLI detected)"
-    if prompt_yn "Activate now by injecting ACIP into ${inject_target}?" "Y"; then
-      if ensure_inject_target_exists "$inject_target"; then
-        backup_file "$inject_target" "backup"
-        inject_security_into_file "$inject_target"
-        active="1"
-      fi
-    fi
+	    log_warn "Activation unknown (no injection markers and no 'clawdbot security' CLI detected)"
+	    if prompt_yn "Activate now by injecting ACIP into ${inject_target}?" "Y"; then
+	      if ensure_inject_target_exists "$inject_target"; then
+	        inject_security_into_file "$inject_target" "backup"
+	        active="1"
+	      fi
+	    fi
 
     if [[ "$active" != "1" ]]; then
       log_warn "Proceeding without confirmed activation; self-test results may be meaningless"
@@ -1567,7 +1638,7 @@ uninstall() {
   else
     # Create backup before removing SECURITY.md
     local backup_file
-    backup_file="${TARGET_FILE}.uninstalled.$(date +%Y%m%d_%H%M%S)"
+    backup_file="${TARGET_FILE}.uninstalled.$(date +%Y%m%d_%H%M%S).$$"
     mv "$TARGET_FILE" "$backup_file"
 
     log_success "Uninstalled ACIP security layer"
@@ -1587,12 +1658,12 @@ uninstall() {
 # ─────────────────────────────────────────────────────────────────────────────
 
 show_help() {
+  local DOLLAR='$'
   cat << EOF
 ACIP Installer for Clawdbot v${SCRIPT_VERSION}
 
 Usage:
-  curl -fsSL -H "Accept: application/vnd.github.raw" \\
-    "${INSTALLER_API_URL}" | bash
+  curl -fsSL -H "Accept: application/vnd.github.raw" "${INSTALLER_API_URL}&ts=${DOLLAR}(date +%s)" | bash
 
 Environment Variables:
   CLAWD_WORKSPACE         Workspace directory (default: auto-detect from clawdbot.json, else ~/clawd)
@@ -1607,47 +1678,32 @@ Environment Variables:
   ACIP_INJECT             Inject ACIP into SOUL.md/AGENTS.md so it's active today
   ACIP_REQUIRE_ACTIVE     Fail if activation can't be confirmed (forces injection when needed)
   ACIP_INJECT_FILE        Injection target (SOUL.md or AGENTS.md; default: SOUL.md)
-  ACIP_EDIT_LOCAL         Open SECURITY.local.md in $EDITOR after install
+  ACIP_EDIT_LOCAL         Open SECURITY.local.md in \$EDITOR after install
 
 Examples:
   # Standard install
-  curl -fsSL -H "Accept: application/vnd.github.raw" \\
-    "${INSTALLER_API_URL}" | bash
+  curl -fsSL -H "Accept: application/vnd.github.raw" "${INSTALLER_API_URL}&ts=${DOLLAR}(date +%s)" | bash
 
   # Recommended: install + activate + self-test
-  ACIP_INJECT=1 ACIP_SELFTEST=1 \\
-    curl -fsSL -H "Accept: application/vnd.github.raw" \\
-      "${INSTALLER_API_URL}" | bash
+  ACIP_INJECT=1 ACIP_SELFTEST=1 curl -fsSL -H "Accept: application/vnd.github.raw" "${INSTALLER_API_URL}&ts=${DOLLAR}(date +%s)" | bash
 
   # Status / verify
-  ACIP_STATUS=1 \\
-    curl -fsSL -H "Accept: application/vnd.github.raw" \\
-      "${INSTALLER_API_URL}" | bash
+  ACIP_STATUS=1 curl -fsSL -H "Accept: application/vnd.github.raw" "${INSTALLER_API_URL}&ts=${DOLLAR}(date +%s)" | bash
 
   # Edit local rules
-  ACIP_EDIT_LOCAL=1 \\
-    curl -fsSL -H "Accept: application/vnd.github.raw" \\
-      "${INSTALLER_API_URL}" | bash
+  ACIP_EDIT_LOCAL=1 curl -fsSL -H "Accept: application/vnd.github.raw" "${INSTALLER_API_URL}&ts=${DOLLAR}(date +%s)" | bash
 
   # Install + run self-test
-  ACIP_SELFTEST=1 \\
-    curl -fsSL -H "Accept: application/vnd.github.raw" \\
-      "${INSTALLER_API_URL}" | bash
+  ACIP_SELFTEST=1 curl -fsSL -H "Accept: application/vnd.github.raw" "${INSTALLER_API_URL}&ts=${DOLLAR}(date +%s)" | bash
 
   # Custom workspace, non-interactive
-  CLAWD_WORKSPACE=~/assistant ACIP_NONINTERACTIVE=1 \\
-    curl -fsSL -H "Accept: application/vnd.github.raw" \\
-      "${INSTALLER_API_URL}" | bash
+  CLAWD_WORKSPACE=~/assistant ACIP_NONINTERACTIVE=1 curl -fsSL -H "Accept: application/vnd.github.raw" "${INSTALLER_API_URL}&ts=${DOLLAR}(date +%s)" | bash
 
   # Uninstall
-  ACIP_UNINSTALL=1 \\
-    curl -fsSL -H "Accept: application/vnd.github.raw" \\
-      "${INSTALLER_API_URL}" | bash
+  ACIP_UNINSTALL=1 curl -fsSL -H "Accept: application/vnd.github.raw" "${INSTALLER_API_URL}&ts=${DOLLAR}(date +%s)" | bash
 
   # Purge (also deletes SECURITY.local.md)
-  ACIP_UNINSTALL=1 ACIP_PURGE=1 \\
-    curl -fsSL -H "Accept: application/vnd.github.raw" \\
-      "${INSTALLER_API_URL}" | bash
+  ACIP_UNINSTALL=1 ACIP_PURGE=1 curl -fsSL -H "Accept: application/vnd.github.raw" "${INSTALLER_API_URL}&ts=${DOLLAR}(date +%s)" | bash
 
 More info: https://github.com/${ACIP_REPO}
 EOF
@@ -1661,7 +1717,16 @@ main() {
   setup_colors
   trap cleanup EXIT
 
+  if [[ "$INJECT_FILE" != "SOUL.md" && "$INJECT_FILE" != "AGENTS.md" ]]; then
+    log_warn "Invalid ACIP_INJECT_FILE=${INJECT_FILE}; defaulting to SOUL.md"
+    INJECT_FILE="SOUL.md"
+  fi
+
   WORKSPACE="$(resolve_workspace)"
+  if [[ -z "${WORKSPACE:-}" ]]; then
+    WORKSPACE="${HOME:-$PWD}/clawd"
+    log_warn "Workspace resolution failed; defaulting to: ${WORKSPACE}"
+  fi
   TARGET_FILE="${WORKSPACE%/}/SECURITY.md"
   LOCAL_RULES_FILE="${WORKSPACE%/}/${LOCAL_RULES_BASENAME}"
 

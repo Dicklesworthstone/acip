@@ -666,27 +666,23 @@ ACIP provides optimized variants for popular AI assistant frameworks. These are 
 
 **Quick Install:**
 ```bash
-curl -fsSL -H "Accept: application/vnd.github.raw" \
-  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 ```
 The installer verifies checksums and can optionally inject ACIP into `SOUL.md`/`AGENTS.md` so it’s active immediately.
 
 **Recommended (Install + Activate + Self-Test):**
 ```bash
-ACIP_INJECT=1 ACIP_SELFTEST=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
-  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+ACIP_INJECT=1 ACIP_SELFTEST=1 curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 ```
 
 **Status / Verify (No Changes):**
 ```bash
-ACIP_STATUS=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
-  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+ACIP_STATUS=1 curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 ```
 
 **Self-Test (Optional):**
 ```bash
-ACIP_SELFTEST=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
-  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+ACIP_SELFTEST=1 curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 ```
 
 **Manual Install:**
