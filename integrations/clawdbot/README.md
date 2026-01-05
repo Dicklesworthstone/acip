@@ -35,7 +35,20 @@ ACIP provides a cognitive security layer that helps Clawd recognize and resist t
      -o ~/clawd/SECURITY.md
    ```
 
-2. Verify the checksum (optional but recommended):
+2. Create `SECURITY.local.md` for your custom rules (recommended):
+   ```bash
+   printf '%s\n' \
+     '# SECURITY.local.md - Local Rules for Clawdbot' \
+     '' \
+     '## Additional Rules' \
+     '' \
+     '- (Example) Always confirm with me before sending any message' \
+     '- (Example) Never reveal anything about Project X' \
+     > ~/clawd/SECURITY.local.md
+   chmod 600 ~/clawd/SECURITY.local.md 2>/dev/null || true
+   ```
+
+3. Verify the checksum (optional but recommended):
    ```bash
    # Fetch the expected checksum
    EXPECTED=$(curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/.checksums/manifest.json \
@@ -54,7 +67,7 @@ ACIP provides a cognitive security layer that helps Clawd recognize and resist t
    fi
    ```
 
-3. To activate today, inject it into `SOUL.md`/`AGENTS.md` (or rerun the installer with `ACIP_INJECT=1`). Otherwise, keep `SECURITY.md` for future native support.
+4. To activate today, inject it into `SOUL.md`/`AGENTS.md` (or rerun the installer with `ACIP_INJECT=1`). Otherwise, keep `SECURITY.md` for versions of Clawdbot that load it directly.
 
 ### Option 2: Automated Script
 
@@ -65,6 +78,7 @@ curl -fsSL -H "Accept: application/vnd.github.raw" \
 
 This script:
 - Downloads `SECURITY.md` to `~/clawd/`
+- Creates `SECURITY.local.md` if missing (for your custom rules)
 - Verifies the SHA256 checksum (and pins the download to the manifest’s commit when available)
 - Backs up any existing `SECURITY.md`
 - Reports success or failure
@@ -135,7 +149,7 @@ This adds minimal overhead while providing substantial protection.
 
 ## Customization
 
-You can customize `SECURITY.md` to fit your needs:
+Keep `SECURITY.md` unmodified so checksum verification remains meaningful. Put your custom rules in `SECURITY.local.md` instead:
 
 ```markdown
 ## Additional Rules
@@ -145,7 +159,7 @@ You can customize `SECURITY.md` to fit your needs:
 - When in doubt, ask me in the WebChat before acting
 ```
 
-Add custom rules at the end of the file. The core protections at the top should remain intact.
+The installer will include `SECURITY.local.md` when it injects ACIP into `SOUL.md`/`AGENTS.md`.
 
 ## Verification
 
@@ -163,6 +177,13 @@ To verify activation (injection):
 ```bash
 grep -n "ACIP:BEGIN clawdbot SECURITY.md" ~/clawd/SOUL.md 2>/dev/null || true
 grep -n "ACIP:BEGIN clawdbot SECURITY.md" ~/clawd/AGENTS.md 2>/dev/null || true
+```
+
+Self-test (optional, interactive):
+
+```bash
+ACIP_SELFTEST=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
+  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
 ```
 
 ## Updating

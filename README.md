@@ -677,11 +677,18 @@ ACIP_STATUS=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
   "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
 ```
 
+**Self-Test (Optional):**
+```bash
+ACIP_SELFTEST=1 curl -fsSL -H "Accept: application/vnd.github.raw" \
+  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
+```
+
 **Manual Install:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/acip/main/integrations/clawdbot/SECURITY.md \
   -o ~/clawd/SECURITY.md
 ```
+Put any custom rules in `~/clawd/SECURITY.local.md` (leave `SECURITY.md` unchanged so checksum verification stays meaningful).
 
 Features:
 - ~1,200 tokens (vs. ~3,200 for full v1.3)
