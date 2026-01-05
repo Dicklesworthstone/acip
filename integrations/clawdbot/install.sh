@@ -38,7 +38,7 @@ set -euo pipefail
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-readonly SCRIPT_VERSION="1.1.2"
+readonly SCRIPT_VERSION="1.1.3"
 readonly ACIP_REPO="Dicklesworthstone/acip"
 readonly ACIP_BRANCH="main"
 readonly SECURITY_FILE="integrations/clawdbot/SECURITY.md"
@@ -329,9 +329,21 @@ sha256() {
 # ─────────────────────────────────────────────────────────────────────────────
 
 fetch_manifest() {
-  if ! curl -fsSL --show-error --max-time 10 "${MANIFEST_URL}?ts=$(date +%s)"; then
-    return 1
+  local api_url="https://api.github.com/repos/${ACIP_REPO}/contents/.checksums/manifest.json?ref=${ACIP_BRANCH}"
+  local ua="acip-clawdbot-installer/${SCRIPT_VERSION}"
+
+  if curl -fsSL --show-error --max-time 10 \
+    -H "Accept: application/vnd.github.raw" \
+    -H "User-Agent: ${ua}" \
+    "$api_url"; then
+    return 0
   fi
+
+  if curl -fsSL --show-error --max-time 10 "$MANIFEST_URL"; then
+    return 0
+  fi
+
+  return 1
 }
 
 extract_manifest_commit() {
@@ -349,11 +361,8 @@ extract_manifest_commit() {
 }
 
 fetch_expected_checksum() {
-  log_step "Fetching checksum from manifest..."
-
   local manifest="$1"
   if [[ -z "$manifest" ]]; then
-    log_warn "Could not fetch manifest (network error or file not found)"
     return 1
   fi
 
@@ -361,13 +370,12 @@ fetch_expected_checksum() {
   # Using grep/sed for portability (no jq requirement)
   local checksum
   checksum=$(echo "$manifest" | \
-    grep -A5 "\"file\": \"${SECURITY_FILE}\"" | \
+    grep -A10 "\"file\": \"${SECURITY_FILE}\"" | \
     grep '"sha256"' | \
     head -1 | \
     sed 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([a-f0-9]*\)".*/\1/')
 
   if [[ -z "$checksum" || ${#checksum} -ne 64 ]]; then
-    log_warn "Could not extract checksum from manifest"
     return 1
   fi
 
@@ -659,13 +667,17 @@ install() {
   local manifest_commit=""
   local expected_checksum=""
 
+  log_step "Fetching checksum manifest..."
   if manifest=$(fetch_manifest); then
     if manifest_commit=$(extract_manifest_commit "$manifest"); then
-      expected_checksum=$(fetch_expected_checksum "$manifest" || true)
+      log_step "Fetching expected checksum from manifest..."
+      if ! expected_checksum=$(fetch_expected_checksum "$manifest"); then
+        expected_checksum=""
+      fi
     fi
   fi
 
-  if [[ -n "${manifest_commit:-}" && -n "${expected_checksum:-}" ]]; then
+  if [[ -n "${manifest_commit:-}" && ${#expected_checksum} -eq 64 ]]; then
     log_info "Using pinned ACIP commit: ${manifest_commit}"
     download_security_file "$manifest_commit"
     if ! verify_checksum "$TARGET_FILE" "$expected_checksum"; then
