@@ -63,7 +63,7 @@ set -euo pipefail
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-readonly SCRIPT_VERSION="1.1.10"
+readonly SCRIPT_VERSION="1.1.11"
 readonly ACIP_REPO="Dicklesworthstone/acip"
 readonly ACIP_BRANCH="main"
 readonly SECURITY_FILE="integrations/clawdbot/SECURITY.md"
@@ -377,7 +377,8 @@ sha256() {
 # Checksum Verification
 # ─────────────────────────────────────────────────────────────────────────────
 
-fetch_manifest() {
+fetch_manifest_to_file() {
+  local out="$1"
   local api_url="https://api.github.com/repos/${ACIP_REPO}/contents/.checksums/manifest.json?ref=${ACIP_BRANCH}"
   local ua="acip-clawdbot-installer/${SCRIPT_VERSION}"
   local auth=()
@@ -391,11 +392,11 @@ fetch_manifest() {
     -H "Accept: application/vnd.github.raw" \
     -H "User-Agent: ${ua}" \
     "${auth[@]}" \
-    "$api_url"; then
+    "$api_url" -o "$out"; then
     return 0
   fi
 
-  if curl -fsSL --show-error --max-time 10 "$MANIFEST_URL"; then
+  if curl -fsSL --show-error --max-time 10 "$MANIFEST_URL" -o "$out"; then
     return 0
   fi
 
@@ -415,22 +416,31 @@ python_cmd() {
 }
 
 extract_manifest_commit() {
-  local manifest="$1"
-  [[ -n "$manifest" ]] || return 1
+  local manifest_input="$1"
+  [[ -n "$manifest_input" ]] || return 1
 
   local commit=""
   local py=""
 
   if py="$(python_cmd)"; then
-    commit="$(printf '%s' "$manifest" | "$py" -c 'import sys,json; m=json.load(sys.stdin); c=m.get("commit",""); print(c if isinstance(c,str) else "")' 2>/dev/null || true)"
+    if [[ -f "$manifest_input" ]]; then
+      commit="$("$py" -c 'import sys,json; m=json.load(open(sys.argv[1], encoding="utf-8")); c=m.get("commit",""); print(c if isinstance(c,str) else "")' "$manifest_input" 2>/dev/null || true)"
+    else
+      commit="$(printf '%s' "$manifest_input" | "$py" -c 'import sys,json; m=json.load(sys.stdin); c=m.get("commit",""); print(c if isinstance(c,str) else "")' 2>/dev/null || true)"
+    fi
   fi
 
   commit="$(printf '%s' "$commit" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
 
   if [[ -z "$commit" ]]; then
-    commit="$(echo "$manifest" | \
-      grep -m 1 -E '^[[:space:]]*"commit"[[:space:]]*:' | \
-      sed 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
+    if [[ -f "$manifest_input" ]]; then
+      commit="$(grep -m 1 -E '^[[:space:]]*"commit"[[:space:]]*:' "$manifest_input" | \
+        sed 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
+    else
+      commit="$(printf '%s' "$manifest_input" | \
+        grep -m 1 -E '^[[:space:]]*"commit"[[:space:]]*:' | \
+        sed 's/.*"commit"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')"
+    fi
     commit="$(printf '%s' "$commit" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
   fi
 
@@ -442,8 +452,8 @@ extract_manifest_commit() {
 }
 
 fetch_expected_checksum() {
-  local manifest="$1"
-  if [[ -z "$manifest" ]]; then
+  local manifest_input="$1"
+  if [[ -z "$manifest_input" ]]; then
     return 1
   fi
 
@@ -453,17 +463,28 @@ fetch_expected_checksum() {
   local py=""
 
   if py="$(python_cmd)"; then
-    checksum="$(printf '%s' "$manifest" | "$py" -c 'import sys,json; m=json.load(sys.stdin); target=sys.argv[1]; items=m.get("integrations") or []; out=next((e.get("sha256","") for e in items if isinstance(e,dict) and e.get("file")==target), ""); print(out if isinstance(out,str) else "")' "$SECURITY_FILE" 2>/dev/null || true)"
+    if [[ -f "$manifest_input" ]]; then
+      checksum="$("$py" -c 'import sys,json; m=json.load(open(sys.argv[1], encoding="utf-8")); target=sys.argv[2]; items=m.get("integrations") or []; out=next((e.get("sha256","") for e in items if isinstance(e,dict) and e.get("file")==target), ""); print(out if isinstance(out,str) else "")' "$manifest_input" "$SECURITY_FILE" 2>/dev/null || true)"
+    else
+      checksum="$(printf '%s' "$manifest_input" | "$py" -c 'import sys,json; m=json.load(sys.stdin); target=sys.argv[1]; items=m.get("integrations") or []; out=next((e.get("sha256","") for e in items if isinstance(e,dict) and e.get("file")==target), ""); print(out if isinstance(out,str) else "")' "$SECURITY_FILE" 2>/dev/null || true)"
+    fi
   fi
 
   checksum="$(printf '%s' "$checksum" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
 
   if [[ -z "$checksum" ]]; then
-    checksum="$(echo "$manifest" | \
-      grep -A10 "\"file\": \"${SECURITY_FILE}\"" | \
-      grep '"sha256"' | \
-      head -1 | \
-      sed 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([a-f0-9]*\)".*/\1/')"
+    if [[ -f "$manifest_input" ]]; then
+      checksum="$(grep -A10 "\"file\": \"${SECURITY_FILE}\"" "$manifest_input" | \
+        grep '"sha256"' | \
+        head -1 | \
+        sed 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([a-f0-9]*\)".*/\1/')"
+    else
+      checksum="$(printf '%s' "$manifest_input" | \
+        grep -A10 "\"file\": \"${SECURITY_FILE}\"" | \
+        grep '"sha256"' | \
+        head -1 | \
+        sed 's/.*"sha256"[[:space:]]*:[[:space:]]*"\([a-f0-9]*\)".*/\1/')"
+    fi
     checksum="$(printf '%s' "$checksum" | tr -d '\r\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
   fi
 
@@ -938,15 +959,13 @@ install() {
   backup_existing
 
   # Attempt to fetch manifest + pin download to the manifest commit to avoid TOCTOU issues.
-  local manifest=""
   local manifest_commit=""
   local expected_checksum=""
   local manifest_file=""
 
   log_step "Fetching checksum manifest..."
-  if manifest=$(fetch_manifest); then
-    manifest_file="$(tmpfile)"
-    printf '%s' "$manifest" > "$manifest_file"
+  manifest_file="$(tmpfile)"
+  if fetch_manifest_to_file "$manifest_file"; then
 
     local sig_file
     local cert_file
@@ -982,9 +1001,9 @@ install() {
       log_info "Manifest is unsigned (no ${MANIFEST_SIG_PATH} found)"
     fi
 
-    if manifest_commit=$(extract_manifest_commit "$manifest"); then
+    if manifest_commit=$(extract_manifest_commit "$manifest_file"); then
       log_step "Fetching expected checksum from manifest..."
-      if ! expected_checksum=$(fetch_expected_checksum "$manifest"); then
+      if ! expected_checksum=$(fetch_expected_checksum "$manifest_file"); then
         expected_checksum=""
       fi
     fi
@@ -1157,20 +1176,18 @@ status() {
     actual_checksum="$(sha256 "$TARGET_FILE" 2>/dev/null || true)"
   fi
 
-  local manifest=""
   local manifest_commit=""
   local expected_checksum=""
   local manifest_sig="unavailable"
+  local manifest_file=""
 
   log_step "Fetching checksum manifest..."
-  if manifest=$(fetch_manifest); then
-    local manifest_file
+  manifest_file="$(tmpfile)"
+  if fetch_manifest_to_file "$manifest_file"; then
     local sig_file
     local cert_file
-    manifest_file="$(tmpfile)"
     sig_file="$(tmpfile)"
     cert_file="$(tmpfile)"
-    printf '%s' "$manifest" > "$manifest_file"
 
     if fetch_manifest_signing_material "$sig_file" "$cert_file"; then
       local sig_rc=0
@@ -1189,8 +1206,8 @@ status() {
       manifest_sig="unsigned"
     fi
 
-    if manifest_commit=$(extract_manifest_commit "$manifest"); then
-      if expected_checksum=$(fetch_expected_checksum "$manifest"); then
+    if manifest_commit=$(extract_manifest_commit "$manifest_file"); then
+      if expected_checksum=$(fetch_expected_checksum "$manifest_file"); then
         :
       else
         expected_checksum=""
