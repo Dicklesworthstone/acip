@@ -666,9 +666,8 @@ ACIP provides optimized variants for popular AI assistant frameworks. These are 
 
 **Quick Install:**
 ```bash
-ACIP_SHA=$(curl -fsSL https://api.github.com/repos/Dicklesworthstone/acip/commits/main \
-  | grep -m1 '"sha"' | cut -d'"' -f4) && \
-curl -fsSL "https://raw.githubusercontent.com/Dicklesworthstone/acip/${ACIP_SHA}/integrations/clawdbot/install.sh" | bash
+curl -fsSL -H "Accept: application/vnd.github.raw" \
+  "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main" | bash
 ```
 The installer verifies checksums and can optionally inject ACIP into `SOUL.md`/`AGENTS.md` so it’s active immediately.
 
