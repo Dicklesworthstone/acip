@@ -1,6 +1,6 @@
 name: Generate ACIP Checksums
 
-on:
+'on':
   push:
     branches: [main]
     paths:
