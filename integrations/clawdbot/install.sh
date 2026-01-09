@@ -12,7 +12,7 @@
 #     "https://api.github.com/repos/Dicklesworthstone/acip/contents/integrations/clawdbot/install.sh?ref=main&ts=$(date +%s)" | bash
 #
 # Options (via environment variables):
-#   CLAWD_WORKSPACE=~/my-clawd  - Custom workspace directory (default: auto-detect from clawdbot.json, else ~/clawd)
+#   CLAWD_WORKSPACE=~/my-clawd  - Custom workspace directory (default: PWD if it contains SOUL.md/AGENTS.md, else ~/.clawdbot/clawdbot.json, else ~/clawd)
 #   ACIP_NONINTERACTIVE=1       - Skip prompts, fail if workspace doesn't exist
 #   ACIP_FORCE=1                - Overwrite without backup
 #   ACIP_QUIET=1                - Minimal output
@@ -25,6 +25,7 @@
 #   ACIP_REQUIRE_ACTIVE=1       - Fail if activation can't be confirmed (forces injection when needed)
 #   ACIP_INJECT_FILE=SOUL.md    - Injection target (SOUL.md or AGENTS.md; default: SOUL.md)
 #   ACIP_EDIT_LOCAL=1           - Open SECURITY.local.md in $EDITOR after install
+#   ACIP_REQUIRE_COSIGN=1       - Fail if cosign isn't installed (recommended for maximum integrity)
 #
 # Examples:
 #   # Standard install
@@ -63,7 +64,7 @@ set -euo pipefail
 # Configuration
 # ─────────────────────────────────────────────────────────────────────────────
 
-readonly SCRIPT_VERSION="1.1.19"
+readonly SCRIPT_VERSION="1.1.21"
 readonly ACIP_REPO="Dicklesworthstone/acip"
 readonly ACIP_BRANCH="main"
 readonly SECURITY_FILE="integrations/clawdbot/SECURITY.md"
@@ -91,6 +92,7 @@ SELFTEST="${ACIP_SELFTEST:-0}"
 UNINSTALL="${ACIP_UNINSTALL:-0}"
 PURGE="${ACIP_PURGE:-0}"
 ALLOW_UNVERIFIED="${ACIP_ALLOW_UNVERIFIED:-0}"
+REQUIRE_COSIGN="${ACIP_REQUIRE_COSIGN:-0}"
 INJECT="${ACIP_INJECT:-0}"
 REQUIRE_ACTIVE="${ACIP_REQUIRE_ACTIVE:-0}"
 INJECT_FILE="${ACIP_INJECT_FILE:-SOUL.md}"
@@ -244,18 +246,18 @@ resolve_workspace() {
     return 0
   fi
 
-  local inferred
-  inferred="$(detect_workspace_from_config || true)"
-  if [[ -n "$inferred" ]]; then
-    echo "$inferred"
-    return 0
-  fi
-
   # If the installer is run from inside a workspace (common under curl|bash), trust PWD.
   if [[ -f "${PWD}/SOUL.md" || -f "${PWD}/AGENTS.md" ]]; then
     local pwdp=""
     pwdp="$(pwd -P 2>/dev/null || pwd)"
     echo "$pwdp"
+    return 0
+  fi
+
+  local inferred
+  inferred="$(detect_workspace_from_config || true)"
+  if [[ -n "$inferred" ]]; then
+    echo "$inferred"
     return 0
   fi
 
@@ -265,6 +267,43 @@ resolve_workspace() {
 has_clawdbot_security_cli() {
   command -v clawdbot >/dev/null 2>&1 || return 1
   clawdbot security --help >/dev/null 2>&1
+}
+
+clawdbot_security_enabled() {
+  # Returns:
+  #   0: enabled (SECURITY.md present in workspace)
+  #   1: disabled
+  #   2: unknown (CLI output/flags not supported)
+  has_clawdbot_security_cli || return 2
+
+  local out=""
+  local rc=0
+
+  out="$(clawdbot security status --workspace "$WORKSPACE" --offline --json 2>/dev/null)" || rc=$?
+  if [[ $rc -eq 0 && -n "$out" ]]; then
+    local py=""
+    if py="$(python_cmd)"; then
+      local enabled=""
+      enabled="$(printf '%s' "$out" | "$py" -c 'import sys,json; m=json.load(sys.stdin); print("1" if m.get("enabled") is True else "0")' 2>/dev/null || true)"
+      if [[ "$enabled" == "1" ]]; then
+        return 0
+      elif [[ "$enabled" == "0" ]]; then
+        return 1
+      fi
+      return 2
+    fi
+
+    if printf '%s' "$out" | grep -Eq '"enabled"[[:space:]]*:[[:space:]]*true'; then
+      return 0
+    fi
+    if printf '%s' "$out" | grep -Eq '"enabled"[[:space:]]*:[[:space:]]*false'; then
+      return 1
+    fi
+    return 2
+  fi
+
+  # Older Clawdbot builds may not support --offline/--json. Best effort: treat as unknown.
+  return 2
 }
 
 mktemp_file() {
@@ -1092,6 +1131,13 @@ install() {
   print_banner
   check_requirements
   ensure_workspace
+  if [[ "$REQUIRE_COSIGN" == "1" ]] && ! command -v cosign >/dev/null 2>&1; then
+    log_error "ACIP_REQUIRE_COSIGN=1 enabled but cosign is not installed"
+    echo ""
+    echo "  Install cosign (sigstore) and re-run:"
+    echo "    https://docs.sigstore.dev/cosign/system_config/installation/"
+    exit 1
+  fi
 
   # Attempt to fetch manifest + pin download to the manifest commit to avoid TOCTOU issues.
   local manifest_commit=""
@@ -1127,7 +1173,10 @@ install() {
       if [[ "$sig_rc" == "0" ]]; then
         log_success "Manifest signature verified"
       elif [[ "$sig_rc" == "3" ]]; then
-        :
+        if [[ "$REQUIRE_COSIGN" == "1" ]]; then
+          log_error "cosign is required but not installed"
+          exit 1
+        fi
       else
         log_error "Manifest signature verification failed"
         if [[ "$ALLOW_UNVERIFIED" == "1" ]]; then
@@ -1152,7 +1201,10 @@ install() {
       if [[ "$sig_rc" == "0" ]]; then
         log_success "Manifest signature verified"
       elif [[ "$sig_rc" == "3" ]]; then
-        :
+        if [[ "$REQUIRE_COSIGN" == "1" ]]; then
+          log_error "cosign is required but not installed"
+          exit 1
+        fi
       else
         log_error "Manifest signature verification failed"
         if [[ "$ALLOW_UNVERIFIED" == "1" ]]; then
@@ -1180,6 +1232,12 @@ install() {
           exit 1
         fi
       else
+        if [[ "$REQUIRE_COSIGN" == "1" ]]; then
+          log_error "cosign is required but the manifest signature material could not be verified"
+          echo ""
+          echo "  Check your network (or set GITHUB_TOKEN), then re-run."
+          exit 1
+        fi
         log_info "Manifest signature material unavailable (continuing without signature verification)"
       fi
     fi
@@ -1271,17 +1329,18 @@ install() {
 
   # If Clawdbot supports a security CLI, treat it as an activation signal only if the status command succeeds.
   if has_clawdbot_security_cli; then
-    local cli_rc=0
-    if [[ "$QUIET" == "1" ]]; then
-      CLAWD_WORKSPACE="$WORKSPACE" clawdbot security status >/dev/null 2>&1 || cli_rc=$?
-    else
+    local cli_state=2
+    clawdbot_security_enabled && cli_state=0 || cli_state=$?
+    if [[ "$QUIET" != "1" ]]; then
       log_info "Detected Clawdbot security CLI; showing status"
-      CLAWD_WORKSPACE="$WORKSPACE" clawdbot security status 2>/dev/null || cli_rc=$?
+      clawdbot security status --workspace "$WORKSPACE" 2>/dev/null || true
     fi
-    if [[ "$cli_rc" == "0" ]]; then
+    if [[ "$cli_state" == "0" ]]; then
       activated="1"
+    elif [[ "$cli_state" == "1" ]]; then
+      log_warn "Clawdbot security reports ACIP disabled in this workspace"
     else
-      log_warn "Clawdbot security status returned non-zero; activation may not be enabled"
+      log_warn "Clawdbot security status could not be parsed; activation unknown"
     fi
   fi
 
@@ -1494,16 +1553,17 @@ status() {
     done
   elif has_clawdbot_security_cli; then
     log_success "Detected Clawdbot security CLI"
-    local cli_rc=0
-    if [[ "$QUIET" == "1" ]]; then
-      CLAWD_WORKSPACE="$WORKSPACE" clawdbot security status >/dev/null 2>&1 || cli_rc=$?
-    else
-      CLAWD_WORKSPACE="$WORKSPACE" clawdbot security status 2>/dev/null || cli_rc=$?
+    local cli_state=2
+    clawdbot_security_enabled && cli_state=0 || cli_state=$?
+    if [[ "$QUIET" != "1" ]]; then
+      clawdbot security status --workspace "$WORKSPACE" 2>/dev/null || true
     fi
-    if [[ "$cli_rc" == "0" ]]; then
+    if [[ "$cli_state" == "0" ]]; then
       activated="1"
+    elif [[ "$cli_state" == "1" ]]; then
+      log_warn "Clawdbot security reports ACIP disabled in this workspace"
     else
-      log_warn "Clawdbot security status returned non-zero; activation unknown"
+      log_warn "Clawdbot security status could not be parsed; activation unknown"
     fi
   else
     log_warn "Activation unknown (no injection markers and no 'clawdbot security' CLI detected)"
@@ -1818,8 +1878,8 @@ ACIP Installer for Clawdbot v${SCRIPT_VERSION}
 Usage:
   curl -fsSL -H "Accept: application/vnd.github.raw" "${INSTALLER_API_URL}&ts=${DOLLAR}(date +%s)" | bash
 
-Environment Variables:
-  CLAWD_WORKSPACE         Workspace directory (default: auto-detect from clawdbot.json, else ~/clawd)
+  Environment Variables:
+  CLAWD_WORKSPACE         Workspace directory (default: PWD if it contains SOUL.md/AGENTS.md, else ~/.clawdbot/clawdbot.json, else ~/clawd)
   ACIP_NONINTERACTIVE     Skip prompts; fail if workspace doesn't exist
   ACIP_FORCE              Overwrite without backup
   ACIP_QUIET              Minimal output
@@ -1832,6 +1892,7 @@ Environment Variables:
   ACIP_REQUIRE_ACTIVE     Fail if activation can't be confirmed (forces injection when needed)
   ACIP_INJECT_FILE        Injection target (SOUL.md or AGENTS.md; default: SOUL.md)
   ACIP_EDIT_LOCAL         Open SECURITY.local.md in \$EDITOR after install
+  ACIP_REQUIRE_COSIGN     Fail if cosign isn't installed (maximum integrity)
 
 Examples:
   # Standard install

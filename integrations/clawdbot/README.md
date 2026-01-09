@@ -110,6 +110,7 @@ ACIP_STATUS=1 curl -fsSL -H "Accept: application/vnd.github.raw" "https://api.gi
 
 Tip: if you hit GitHub API rate limits, set `GITHUB_TOKEN` (or `GH_TOKEN`) before running the installer.
 If you have `cosign` installed, the installer will also verify a signed checksum manifest (when available).
+For maximum integrity, set `ACIP_REQUIRE_COSIGN=1` (fails closed if `cosign` isn’t installed).
 
 ### Option 3: Clawdbot CLI (Coming Soon)
 
@@ -213,11 +214,11 @@ These are simple “sanity checks” you can try after activation:
 
 ## Troubleshooting
 
-- **Workspace auto-detect:** uses `CLAWD_WORKSPACE`, then `~/.clawdbot/clawdbot.json`, then `PWD` if it contains `SOUL.md`/`AGENTS.md`, else `~/clawd`.
+- **Workspace auto-detect:** uses `CLAWD_WORKSPACE`, then `PWD` if it contains `SOUL.md`/`AGENTS.md`, then `~/.clawdbot/clawdbot.json`, else `~/clawd`.
 - **“Active: unknown”:** re-run with `ACIP_INJECT=1` (or set `ACIP_REQUIRE_ACTIVE=1` to fail unless activation succeeds), then restart Clawdbot.
 - **Checksum mismatch:** you likely edited `SECURITY.md`; revert it and put custom rules in `SECURITY.local.md` instead.
 - **GitHub API rate limits:** set `GITHUB_TOKEN` or `GH_TOKEN`.
-- **Manifest signature:** if `cosign` is installed and signature verification fails, the installer will refuse unless `ACIP_ALLOW_UNVERIFIED=1` is set.
+- **Manifest signature:** if `cosign` is installed and signature verification fails, the installer will refuse unless `ACIP_ALLOW_UNVERIFIED=1` is set. Set `ACIP_REQUIRE_COSIGN=1` to require `cosign`.
 
 ## Updating
 

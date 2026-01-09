@@ -194,21 +194,37 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.sha }}
 
+      - name: Guard against stale runs (main advanced)
+        id: guard
+        run: |
+          git fetch origin main
+          REMOTE_MAIN="$(git rev-parse origin/main)"
+          if [ "$REMOTE_MAIN" != "${{ github.sha }}" ]; then
+            echo "main advanced to $REMOTE_MAIN; skipping checksums commit for stale sha ${{ github.sha }}"
+            echo "proceed=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "proceed=1" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Replace .checksums from generated artifact
+        if: steps.guard.outputs.proceed == '1'
         run: rm -rf .checksums
 
       - name: Download generated checksums
+        if: steps.guard.outputs.proceed == '1'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: acip-checksums
           path: .checksums
 
       - name: Install cosign
+        if: steps.guard.outputs.proceed == '1'
         uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
         with:
           cosign-release: 'v3.0.3'
 
       - name: Sign manifest (keyless)
+        if: steps.guard.outputs.proceed == '1'
         run: |
           if git diff --quiet -- .checksums/manifest.json && \
              [ -f .checksums/manifest.json.sig ] && \
@@ -235,6 +251,7 @@ jobs:
           fi
 
       - name: Commit checksums
+        if: steps.guard.outputs.proceed == '1'
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
@@ -244,10 +261,14 @@ jobs:
             echo "No changes to checksums"
           else
             git commit -m "Update ACIP checksums [skip ci]"
-            git push origin HEAD:main
+            git push origin HEAD:main || {
+              echo "Push failed (likely due to concurrent updates). Skipping."
+              exit 0
+            }
           fi
 
       - name: Upload checksums as artifact
+        if: steps.guard.outputs.proceed == '1'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: acip-checksums-signed
