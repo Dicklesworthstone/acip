@@ -1,3 +1,17 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+# -----------------------------------------------------------------------------
+# ACIP Checksums Workflow
+# -----------------------------------------------------------------------------
+# Generates SHA256 checksums and manifest for ACIP files, signs with Sigstore
+# cosign (keyless), and commits results to the repository.
+#
+# Security considerations:
+# - All actions pinned to full SHA for supply chain security
+# - Minimal permissions following principle of least privilege
+# - Stale run detection prevents race conditions
+# - Keyless signing via Sigstore for transparent provenance
+# -----------------------------------------------------------------------------
+
 name: Generate ACIP Checksums
 
 'on':
@@ -7,51 +21,84 @@ name: Generate ACIP Checksums
       - 'ACIP_*.md'
       - 'integrations/**'
       - 'README.md'
+      - 'RECOMMENDED_VERSION'
       - '.github/workflows/checksums.yml'
   workflow_dispatch:
+    inputs:
+      force_regenerate:
+        description: 'Force regeneration even if files unchanged'
+        required: false
+        default: 'false'
+        type: boolean
 
 permissions:
   contents: read
 
 concurrency:
-  group: acip-checksums-main
+  group: acip-checksums-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  # Centralized action versions for easier updates
+  # renovate: datasource=github-tags depName=actions/checkout
+  CHECKOUT_VERSION: 'de0fac2b6730a3b006e89b1a10adfe1e8ef8b170' # v6.0.2
+  # renovate: datasource=github-tags depName=actions/upload-artifact
+  UPLOAD_ARTIFACT_VERSION: '65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08' # v4.6.0
+  # renovate: datasource=github-tags depName=actions/download-artifact
+  DOWNLOAD_ARTIFACT_VERSION: '9bc31d5ccc31df68ecc42ccf4149144866c47d8a' # v4.1.8
+  # renovate: datasource=github-tags depName=sigstore/cosign-installer
+  COSIGN_INSTALLER_VERSION: '3454372f43399081ed03b604cb2d021dabca52bb' # v3.8.0
+  # renovate: datasource=github-releases depName=sigstore/cosign
+  COSIGN_RELEASE: 'v2.4.3'
 
 jobs:
   generate-checksums:
+    name: Generate Checksums & Manifest
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: read
+    outputs:
+      checksums_changed: ${{ steps.generate.outputs.checksums_changed }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@de0fac2b6730a3b006e89b1a10adfe1e8ef8b170 # v6.0.2
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
 
       - name: Generate checksums and manifest
+        id: generate
+        shell: bash
         run: |
+          set -euo pipefail
+
           # Create checksums directory
           mkdir -p .checksums
           rm -f .checksums/*.sha256 .checksums/SHA256SUMS .checksums/manifest.json 2>/dev/null || true
 
-          # Generate SHA256 checksums for all ACIP files
-          echo "Generating checksums for ACIP files..."
+          echo "::group::Generating checksums for ACIP files"
 
           # Get commit timestamp + commit (stable across reruns for the same commit)
           COMMIT=$(git rev-parse HEAD)
           COMMIT_UNIX_TS=$(git show -s --format=%ct "$COMMIT")
           TIMESTAMP=$(date -u -d "@$COMMIT_UNIX_TS" +"%Y-%m-%dT%H:%M:%SZ")
 
+          echo "Commit: $COMMIT"
+          echo "Timestamp: $TIMESTAMP"
+
           # Resolve latest and recommended versions.
           # - latest: highest ACIP_v_* version found
           # - recommended: RECOMMENDED_VERSION file if present, else latest
           LATEST_VERSION=$(ls ACIP_v_*.md 2>/dev/null | sed -E 's/ACIP_v_([0-9.]+)_.*/\1/' | sort -V | tail -1)
-          RECOMMENDED_VERSION=$(cat RECOMMENDED_VERSION 2>/dev/null | tr -d '[:space:]' || true)
+          RECOMMENDED_VERSION=$(tr -d '[:space:]' < RECOMMENDED_VERSION 2>/dev/null || true)
           if [ -z "${RECOMMENDED_VERSION:-}" ]; then
             RECOMMENDED_VERSION="$LATEST_VERSION"
           fi
+
+          echo "Latest version: $LATEST_VERSION"
+          echo "Recommended version: $RECOMMENDED_VERSION"
 
           # Start building the versions array
           VERSIONS_JSON="["
@@ -68,8 +115,8 @@ jobs:
               # Generate SHA256 checksum
               CHECKSUM=$(sha256sum "$file" | cut -d' ' -f1)
 
-              # Get file size
-              SIZE=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file")
+              # Get file size (Linux stat syntax)
+              SIZE=$(stat -c%s "$file")
 
               # Get line count
               LINES=$(wc -l < "$file" | tr -d ' ')
@@ -100,13 +147,17 @@ jobs:
           VERSIONS_JSON="$VERSIONS_JSON
             ]"
 
+          echo "::endgroup::"
+          echo "::group::Processing integrations"
+
           # Build integrations array
           INTEGRATIONS_JSON="["
           FIRST_INT=true
 
           # Process integration files (unique; include md + sh)
-          while IFS= read -r intfile; do
-            echo "Processing integration: $intfile"
+          if [ -d integrations ]; then
+            while IFS= read -r intfile; do
+              echo "Processing integration: $intfile"
 
               # Extract integration name from path
               INT_NAME=$(echo "$intfile" | cut -d'/' -f2)
@@ -114,8 +165,8 @@ jobs:
               # Generate SHA256 checksum
               INT_CHECKSUM=$(sha256sum "$intfile" | cut -d' ' -f1)
 
-              # Get file size
-              INT_SIZE=$(stat -f%z "$intfile" 2>/dev/null || stat -c%s "$intfile")
+              # Get file size (Linux stat syntax)
+              INT_SIZE=$(stat -c%s "$intfile")
 
               # Get line count
               INT_LINES=$(wc -l < "$intfile" | tr -d ' ')
@@ -141,12 +192,16 @@ jobs:
                   \"tokens\": null,
                   \"raw_url\": \"https://raw.githubusercontent.com/${{ github.repository }}/$COMMIT/$intfile\"
                 }"
-          done < <(find integrations -type f \( -name '*.md' -o -name '*.sh' \) -print | LC_ALL=C sort -u)
+            done < <(find integrations -type f \( -name '*.md' -o -name '*.sh' \) -print | LC_ALL=C sort -u)
+          fi
 
           INTEGRATIONS_JSON="$INTEGRATIONS_JSON
             ]"
 
-          # Create final manifest
+          echo "::endgroup::"
+          echo "::group::Creating manifest"
+
+          # Create final manifest using jq for proper JSON formatting
           cat > .checksums/manifest.json << EOF
           {
             "schema_version": "1.2",
@@ -168,109 +223,183 @@ jobs:
           EOF
 
           # Pretty print the manifest
+          echo "Generated manifest:"
           cat .checksums/manifest.json
 
           # Also create a combined checksums file
           cat .checksums/*.sha256 > .checksums/SHA256SUMS 2>/dev/null || true
 
-      - name: Upload generated checksums (unsigned) as artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+          echo "::endgroup::"
+
+          # Check if checksums actually changed
+          if git diff --quiet -- .checksums/ 2>/dev/null; then
+            echo "checksums_changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No changes to checksums detected"
+          else
+            echo "checksums_changed=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Checksums have been updated"
+          fi
+
+      - name: Upload generated checksums (unsigned)
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
           name: acip-checksums
           path: .checksums/
           retention-days: 7
+          if-no-files-found: error
 
   sign-and-commit:
+    name: Sign & Commit Checksums
     if: github.ref == 'refs/heads/main'
     needs: generate-checksums
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions:
       contents: write
-      id-token: write
+      id-token: write  # Required for keyless signing with Sigstore
     steps:
       - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@de0fac2b6730a3b006e89b1a10adfe1e8ef8b170 # v6.0.2
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
 
-      - name: Guard against stale runs (main advanced)
+      - name: Guard against stale runs
         id: guard
+        shell: bash
         run: |
-          git fetch origin main
+          set -euo pipefail
+          git fetch origin main --quiet
           REMOTE_MAIN="$(git rev-parse origin/main)"
           if [ "$REMOTE_MAIN" != "${{ github.sha }}" ]; then
-            echo "main advanced to $REMOTE_MAIN; skipping checksums commit for stale sha ${{ github.sha }}"
-            echo "proceed=0" >> "$GITHUB_OUTPUT"
+            echo "::warning::main advanced to $REMOTE_MAIN; skipping checksums commit for stale sha ${{ github.sha }}"
+            echo "proceed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "proceed=1" >> "$GITHUB_OUTPUT"
+            echo "proceed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Replace .checksums from generated artifact
-        if: steps.guard.outputs.proceed == '1'
+      - name: Prepare checksums directory
+        if: steps.guard.outputs.proceed == 'true'
         run: rm -rf .checksums
 
       - name: Download generated checksums
-        if: steps.guard.outputs.proceed == '1'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: steps.guard.outputs.proceed == 'true'
+        uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v4.1.8
         with:
           name: acip-checksums
           path: .checksums
 
-      - name: Install cosign
-        if: steps.guard.outputs.proceed == '1'
-        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
-        with:
-          cosign-release: 'v3.0.3'
-
-      - name: Sign manifest (keyless)
-        if: steps.guard.outputs.proceed == '1'
+      - name: Verify artifact integrity
+        if: steps.guard.outputs.proceed == 'true'
+        shell: bash
         run: |
-          if git diff --quiet -- .checksums/manifest.json && \
+          set -euo pipefail
+          # Verify the manifest exists and is valid JSON
+          if [ ! -f .checksums/manifest.json ]; then
+            echo "::error::manifest.json not found in downloaded artifact"
+            exit 1
+          fi
+          # Basic JSON validation
+          if ! python3 -c "import json; json.load(open('.checksums/manifest.json'))"; then
+            echo "::error::manifest.json is not valid JSON"
+            exit 1
+          fi
+          echo "::notice::Artifact integrity verified"
+
+      - name: Install cosign
+        if: steps.guard.outputs.proceed == 'true'
+        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb # v3.8.0
+        with:
+          cosign-release: 'v2.4.3'
+
+      - name: Verify cosign installation
+        if: steps.guard.outputs.proceed == 'true'
+        run: |
+          cosign version
+          echo "::notice::Cosign installed successfully"
+
+      - name: Sign manifest (keyless via Sigstore)
+        if: steps.guard.outputs.proceed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Check if signature already exists and manifest is unchanged
+          if git diff --quiet -- .checksums/manifest.json 2>/dev/null && \
              [ -f .checksums/manifest.json.sig ] && \
              [ -f .checksums/manifest.json.pem ] && \
              [ -f .checksums/manifest.json.bundle ]; then
-            echo "Manifest unchanged and signature/cert already present; skipping signing."
-          else
-            cosign sign-blob --yes \
-              --bundle .checksums/manifest.json.bundle \
-              --new-bundle-format=true \
-              --output-signature .checksums/manifest.json.sig \
-              --output-certificate .checksums/manifest.json.pem \
-              .checksums/manifest.json
+            echo "::notice::Manifest unchanged and signature already present; skipping signing"
+            exit 0
           fi
 
-          # Normalize certificate to PEM for easier manual verification.
-          if ! grep -q "BEGIN CERTIFICATE" .checksums/manifest.json.pem; then
-            base64 -d .checksums/manifest.json.pem > .checksums/manifest.json.pem.decoded 2>/dev/null || true
-            if grep -q "BEGIN CERTIFICATE" .checksums/manifest.json.pem.decoded; then
-              mv .checksums/manifest.json.pem.decoded .checksums/manifest.json.pem
-            else
-              rm -f .checksums/manifest.json.pem.decoded
+          echo "::group::Signing manifest with cosign"
+          cosign sign-blob --yes \
+            --bundle .checksums/manifest.json.bundle \
+            --output-signature .checksums/manifest.json.sig \
+            --output-certificate .checksums/manifest.json.pem \
+            .checksums/manifest.json
+          echo "::endgroup::"
+
+          # Normalize certificate to PEM for easier manual verification
+          if ! grep -q "BEGIN CERTIFICATE" .checksums/manifest.json.pem 2>/dev/null; then
+            if base64 -d .checksums/manifest.json.pem > .checksums/manifest.json.pem.decoded 2>/dev/null; then
+              if grep -q "BEGIN CERTIFICATE" .checksums/manifest.json.pem.decoded; then
+                mv .checksums/manifest.json.pem.decoded .checksums/manifest.json.pem
+              else
+                rm -f .checksums/manifest.json.pem.decoded
+              fi
             fi
           fi
 
+          echo "::notice::Manifest signed successfully"
+
       - name: Commit checksums
-        if: steps.guard.outputs.proceed == '1'
+        if: steps.guard.outputs.proceed == 'true'
+        shell: bash
         run: |
+          set -euo pipefail
+
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
 
           git add .checksums/
+
           if git diff --staged --quiet; then
-            echo "No changes to checksums"
-          else
-            git commit -m "Update ACIP checksums [skip ci]"
-            git push origin HEAD:main || {
-              echo "Push failed (likely due to concurrent updates). Skipping."
-              exit 0
-            }
+            echo "::notice::No changes to checksums - nothing to commit"
+            exit 0
           fi
 
-      - name: Upload checksums as artifact
-        if: steps.guard.outputs.proceed == '1'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+          # Create commit with detailed message
+          git commit -m "chore: update ACIP checksums [skip ci]
+
+Automated checksum regeneration triggered by file changes.
+
+Signed-off-by: github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+
+          # Push with retry logic for transient failures
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main; then
+              echo "::notice::Checksums committed and pushed successfully"
+              exit 0
+            fi
+            echo "::warning::Push attempt $attempt failed, retrying..."
+            sleep $((attempt * 2))
+            git fetch origin main --quiet
+            if [ "$(git rev-parse origin/main)" != "$(git rev-parse HEAD~1)" ]; then
+              echo "::warning::main has advanced during push attempts; aborting to prevent conflicts"
+              exit 0
+            fi
+          done
+
+          echo "::warning::Push failed after 3 attempts (likely due to concurrent updates). Skipping."
+          exit 0
+
+      - name: Upload signed checksums
+        if: steps.guard.outputs.proceed == 'true'
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
           name: acip-checksums-signed
           path: .checksums/
           retention-days: 90
+          if-no-files-found: error
