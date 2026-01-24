@@ -28,7 +28,7 @@ name: Generate ACIP Checksums
       force_regenerate:
         description: 'Force regeneration even if files unchanged'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 permissions:
