@@ -3,11 +3,11 @@
   "project": "ACIP",
   "description": "Advanced Cognitive Inoculation Prompt - Checksums and Metadata",
   "repository": "https://github.com/Dicklesworthstone/acip",
-  "generated_at": "2026-01-05T16:16:47Z",
-  "commit": "e276e5003d5acd4b2cd057716e1b407a5c22c826",
+  "generated_at": "2026-01-24T05:47:57Z",
+  "commit": "28d05756aca186c95b34f94c05664d11f2471240",
   "recommended_version": "1.3",
   "latest_version": "1.3",
-  "tokenizer": "tiktoken/cl100k_base",
+  "tokenizer": null,
   "versions": [
       {
         "version": "1.0",
@@ -15,8 +15,8 @@
         "sha256": "36f74b56e06ceb72e6a0ac48a0e6e7b9fa66b1e92c65c0b4cbf757e72f133ee5",
         "size_bytes": 9870,
         "lines": 139,
-        "tokens": 2328,
-        "raw_url": "https://raw.githubusercontent.com/Dicklesworthstone/acip/e276e5003d5acd4b2cd057716e1b407a5c22c826/ACIP_v_1.0_Full_Text.md"
+        "tokens": null,
+        "raw_url": "https://raw.githubusercontent.com/Dicklesworthstone/acip/28d05756aca186c95b34f94c05664d11f2471240/ACIP_v_1.0_Full_Text.md"
       },
       {
         "version": "1.2",
@@ -24,8 +24,8 @@
         "sha256": "12d4f825e533d7b6a8937a355cf444a9c432d7b41df2f1a6a91654e0b684e11b",
         "size_bytes": 18180,
         "lines": 244,
-        "tokens": 3778,
-        "raw_url": "https://raw.githubusercontent.com/Dicklesworthstone/acip/e276e5003d5acd4b2cd057716e1b407a5c22c826/ACIP_v_1.2_Full_Text.md"
+        "tokens": null,
+        "raw_url": "https://raw.githubusercontent.com/Dicklesworthstone/acip/28d05756aca186c95b34f94c05664d11f2471240/ACIP_v_1.2_Full_Text.md"
       },
       {
         "version": "1.3",
@@ -33,19 +33,19 @@
         "sha256": "4a20617936c643c5dace2fdd2398a74b347d54ca4ecfa0f8c398e0d7a8d9b497",
         "size_bytes": 22422,
         "lines": 408,
-        "tokens": 4523,
-        "raw_url": "https://raw.githubusercontent.com/Dicklesworthstone/acip/e276e5003d5acd4b2cd057716e1b407a5c22c826/ACIP_v_1.3_Full_Text.md"
+        "tokens": null,
+        "raw_url": "https://raw.githubusercontent.com/Dicklesworthstone/acip/28d05756aca186c95b34f94c05664d11f2471240/ACIP_v_1.3_Full_Text.md"
       }
   ],
   "integrations": [
       {
         "integration": "clawdbot",
         "file": "integrations/clawdbot/README.md",
-        "sha256": "a90ce4b92a0a3cca04fea4fa43aa92cd439237a19c3bb2da45d072e9fe3bba25",
-        "size_bytes": 11103,
-        "lines": 299,
-        "tokens": 2855,
-        "raw_url": "https://raw.githubusercontent.com/Dicklesworthstone/acip/e276e5003d5acd4b2cd057716e1b407a5c22c826/integrations/clawdbot/README.md"
+        "sha256": "7633f936dad868eb517840e7407e60931c0add71bfa4a6aa85e0cdf09cb017e8",
+        "size_bytes": 11352,
+        "lines": 292,
+        "tokens": null,
+        "raw_url": "https://raw.githubusercontent.com/Dicklesworthstone/acip/28d05756aca186c95b34f94c05664d11f2471240/integrations/clawdbot/README.md"
       },
       {
         "integration": "clawdbot",
@@ -53,17 +53,17 @@
         "sha256": "9ee63f40a15a75a7d085f087891b63a9716b10e95aa63c7ec6e3955d6fdb1529",
         "size_bytes": 5292,
         "lines": 121,
-        "tokens": 1116,
-        "raw_url": "https://raw.githubusercontent.com/Dicklesworthstone/acip/e276e5003d5acd4b2cd057716e1b407a5c22c826/integrations/clawdbot/SECURITY.md"
+        "tokens": null,
+        "raw_url": "https://raw.githubusercontent.com/Dicklesworthstone/acip/28d05756aca186c95b34f94c05664d11f2471240/integrations/clawdbot/SECURITY.md"
       },
       {
         "integration": "clawdbot",
         "file": "integrations/clawdbot/install.sh",
-        "sha256": "31cde6d83cfad7a2d1a2b9f6eccc17ecdc1ed25658f4f1d272e6d511c8fd9e89",
-        "size_bytes": 59151,
-        "lines": 1686,
-        "tokens": 15115,
-        "raw_url": "https://raw.githubusercontent.com/Dicklesworthstone/acip/e276e5003d5acd4b2cd057716e1b407a5c22c826/integrations/clawdbot/install.sh"
+        "sha256": "650894bd075237a96c21590850e3c4f878c0f8318cce341ad7f5cda6d3f801f1",
+        "size_bytes": 69605,
+        "lines": 1965,
+        "tokens": null,
+        "raw_url": "https://raw.githubusercontent.com/Dicklesworthstone/acip/28d05756aca186c95b34f94c05664d11f2471240/integrations/clawdbot/install.sh"
       }
   ],
   "verification": {
