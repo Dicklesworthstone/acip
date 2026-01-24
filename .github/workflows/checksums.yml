@@ -371,11 +371,9 @@ jobs:
           fi
 
           # Create commit with detailed message
-          git commit -m "chore: update ACIP checksums [skip ci]
-
-Automated checksum regeneration triggered by file changes.
-
-Signed-off-by: github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+          git commit -m "chore: update ACIP checksums [skip ci]" \
+            -m "Automated checksum regeneration triggered by file changes." \
+            -m "Signed-off-by: github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
 
           # Push with retry logic for transient failures
           for attempt in 1 2 3; do
