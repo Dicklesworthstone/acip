@@ -40,15 +40,6 @@ concurrency:
 
 env:
   # Centralized action versions for easier updates
-  # renovate: datasource=github-tags depName=actions/checkout
-  CHECKOUT_VERSION: 'de0fac2b6730a3b006e89b1a10adfe1e8ef8b170' # v6.0.2
-  # renovate: datasource=github-tags depName=actions/upload-artifact
-  UPLOAD_ARTIFACT_VERSION: '65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08' # v4.6.0
-  # renovate: datasource=github-tags depName=actions/download-artifact
-  DOWNLOAD_ARTIFACT_VERSION: '9bc31d5ccc31df68ecc42ccf4149144866c47d8a' # v4.1.8
-  # renovate: datasource=github-tags depName=sigstore/cosign-installer
-  COSIGN_INSTALLER_VERSION: '3454372f43399081ed03b604cb2d021dabca52bb' # v3.8.0
-  # renovate: datasource=github-releases depName=sigstore/cosign
   COSIGN_RELEASE: 'v2.4.3'
 
 jobs:
@@ -63,7 +54,7 @@ jobs:
       checksums_changed: ${{ steps.generate.outputs.checksums_changed }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2b6730a3b006e89b1a10adfe1e8ef8b170 # v6.0.2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
@@ -241,7 +232,7 @@ jobs:
           fi
 
       - name: Upload generated checksums (unsigned)
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        uses: actions/upload-artifact@v4
         with:
           name: acip-checksums
           path: .checksums/
@@ -259,7 +250,7 @@ jobs:
       id-token: write  # Required for keyless signing with Sigstore
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2b6730a3b006e89b1a10adfe1e8ef8b170 # v6.0.2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
@@ -284,7 +275,7 @@ jobs:
 
       - name: Download generated checksums
         if: steps.guard.outputs.proceed == 'true'
-        uses: actions/download-artifact@9bc31d5ccc31df68ecc42ccf4149144866c47d8a # v4.1.8
+        uses: actions/download-artifact@v4
         with:
           name: acip-checksums
           path: .checksums
@@ -308,7 +299,7 @@ jobs:
 
       - name: Install cosign
         if: steps.guard.outputs.proceed == 'true'
-        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb # v3.8.0
+        uses: sigstore/cosign-installer@v3
         with:
           cosign-release: 'v2.4.3'
 
@@ -395,7 +386,7 @@ jobs:
 
       - name: Upload signed checksums
         if: steps.guard.outputs.proceed == 'true'
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        uses: actions/upload-artifact@v4
         with:
           name: acip-checksums-signed
           path: .checksums/
