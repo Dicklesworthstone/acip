@@ -238,6 +238,7 @@ jobs:
           path: .checksums/
           retention-days: 7
           if-no-files-found: error
+          include-hidden-files: true
 
   sign-and-commit:
     name: Sign & Commit Checksums
@@ -392,3 +393,4 @@ jobs:
           path: .checksums/
           retention-days: 90
           if-no-files-found: error
+          include-hidden-files: true
